@@ -65,7 +65,7 @@
                             <h5>Recommended transfers:</h5>
                         </div>
                         <div class="col-md-6 text-center">
-                            <div class="card mx-auto" style="width: 90%; background-image: url('background-pitch.png'); background-size: cover; background-position: center;">
+                            <div class="card mx-auto" style="width: 90%; background-image: url('images/background-pitch.png'); background-size: cover; background-position: center;">
                                 <br> 
                                 <div class="container text-center">
                                     <div class="row">
