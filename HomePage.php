@@ -15,7 +15,7 @@
         <div class="container mt-5">
             <div class="card mx-auto" style="width: 100%;">
                 <div class="card-body">
-                    <h4 class='text-center'>Player Stats (Sorted by Points)</h4>
+                    <h2 class='text-center'><u>Player Stats (Sorted by Total Points)</u></h2>
 
                     <?php
                     $mylesFPLID = 253006;
@@ -52,8 +52,8 @@
                             <h5>Goalkeepers</h5>
                             <?php
                             if (isset($groupedPlayers[1])) {
-                                foreach ($groupedPlayers[1] as $player) {
-                                    echo "Name: " . $player['web_name'] . " - Points: " . $player['total_points'] . "(ID: " . $player['id'] . ")<br>";   
+                                for($x = 0; $x <= 25; $x++) {
+                                    echo "<span style='color: red;'>" . $groupedPlayers[1][$x]['web_name'] . "</span> - Points: " . $groupedPlayers[1][$x]['total_points'] . "(ID: " . $groupedPlayers[1][$x]['id'] . ")<br>";   
                                 }
                             } else {
                                 echo "No players found.";
@@ -64,8 +64,8 @@
                             <h5>Defenders</h5>
                             <?php
                             if (isset($groupedPlayers[2])) {
-                                foreach ($groupedPlayers[2] as $player) {
-                                    echo "Name: " . $player['web_name'] . " - Points: " . $player['total_points'] . "(ID: " . $player['id'] . ")<br>";                                
+                                for($x = 0; $x <= 25; $x++) {
+                                    echo "<span style='color: red;'>" . $groupedPlayers[2][$x]['web_name'] . "</span> - Points: " . $groupedPlayers[2][$x]['total_points'] . "(ID: " . $groupedPlayers[2][$x]['id'] . ")<br>";   
                                 }
                             } else {
                                 echo "No players found.";
@@ -76,8 +76,8 @@
                             <h5>Midfielders</h5>
                             <?php
                             if (isset($groupedPlayers[3])) {
-                                foreach ($groupedPlayers[3] as $player) {
-                                    echo "Name: " . $player['web_name'] . " - Points: " . $player['total_points'] . "(ID: " . $player['id'] . ")<br>";                                
+                                for($x = 0; $x <= 25; $x++) {
+                                    echo "<span style='color: red;'>" . $groupedPlayers[3][$x]['web_name'] . "</span> - Points: " . $groupedPlayers[3][$x]['total_points'] . "(ID: " . $groupedPlayers[3][$x]['id'] . ")<br>";   
                                 }
                             } else {
                                 echo "No players found.";
@@ -88,13 +88,17 @@
                             <h5>Forwards</h5>
                             <?php
                             if (isset($groupedPlayers[4])) {
-                                foreach ($groupedPlayers[4] as $player) {
-                                    echo "Name: " . $player['web_name'] . " - Points: " . $player['total_points'] . "(ID: " . $player['id'] . ")<br>";                                
+                                for($x = 0; $x <= 25; $x++) {
+                                    echo "<span style='color: red;'>" . $groupedPlayers[4][$x]['web_name'] . "</span> - Points: " . $groupedPlayers[4][$x]['total_points'] . "(ID: " . $groupedPlayers[4][$x]['id'] . ")<br>";   
                                 }
                             } else {
                                 echo "No players found.";
                             }
                             ?>
+                        </div>
+
+                        <div class="text-center">
+                            <a href="SelectTeam.php"><button class="btn btn-primary" type="button">Select Team</button></a>
                         </div>
                     </div>
                 </div>

@@ -1,3 +1,7 @@
 body {
     background-color: #d6d6d6; 
-  }
+}
+
+.smaller-text {
+    font-size: 0.8rem;
+}
