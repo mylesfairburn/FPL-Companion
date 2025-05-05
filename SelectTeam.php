@@ -46,6 +46,8 @@
 
         ?>
 
+        <img src="Images/ARS-Keeper-Kit.webp" alt="Sample Image" width="75" height="100">
+
         <div class="container mt-5">
             <div class="card mx-auto" style="width: 100%;">
                 <div class="card-body">
