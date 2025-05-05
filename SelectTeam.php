@@ -74,7 +74,7 @@
                         <h5>Recommended transfers:</h5>
                     </div>
                     <div class="col-md-6 text-center">
-                        <div class="card mx-auto" style="width: 90%; background-image: url('background-pitch.png'); background-size: cover; background-position: center;">
+                        <div class="card mx-auto" style="width: 90%; background-image: url('images/background-pitch.png'); background-size: cover; background-position: center;">
                             <br> 
                             <div class="container text-center">
                                 <div class="row">
@@ -169,9 +169,9 @@
                             <br>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-3"> 
                         <h5>Player watchlist:</h5>
-                    </div>
+                    </div>                       
                 </div>
 
                 <br>
@@ -220,7 +220,7 @@
                             $query->bindValue(':teamID', $players[$x]['team'], SQLITE3_TEXT);
                             $queryresult = $query->execute();
                             $result = $queryresult->fetchArray(SQLITE3_ASSOC);
-                            
+
                             $kitDir = $result['outfield_kit_path'];
                         }
                     
