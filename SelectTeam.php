@@ -45,6 +45,15 @@
         $nextPageCount = ceil($playerCount / 10);
         $prevPageCount = 0;
 
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (isset($_POST['prev'])) {
+                echo "Prev button was pressed!";
+            } // previous button pressed
+
+            if (isset($_POST['next'])) {
+                echo "Next button was pressed!";
+            } // next button pressed
+        }
         ?>
 
         <div class="container mt-5">
@@ -151,8 +160,14 @@
                                 <br>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="d-flex">
+                        <div class="col-md-3"> 
+                            <h5>Player watchlist:</h5>
+                        </div>                       
+                    </div>
+
+                    <br>
+
+                    <div class="d-flex">
                                 <input class="form-control me-2" list="datalistOptions" id="exampleDataList" placeholder="Search Players:">
                                 <datalist id="datalistOptions">
                                     <?php
@@ -181,15 +196,18 @@
                                 ?>
                             </table>
                             <div class="d-flex justify-content-between">
-                                <button class="btn btn-secondary" type="button" name="prev" id="prev">
-                                    < Prev (<?php echo $prevPageCount; ?>)
-                                </button>
-                                <button class="btn btn-secondary" type="button" name="next" id="next">
-                                    Next (<?php echo $nextPageCount; ?>) >
-                                </button>
+                                <form method="POST" action="SelectTeam.php">
+                                    <button class="btn btn-secondary" type="submit" name="prev" id="prev">
+                                        < Prev (<?php echo $prevPageCount; ?>)
+                                    </button>
+                                </form>
+
+                                <form method="POST" action="SelectTeam.php">
+                                    <button class="btn btn-secondary" type="submit" name="next" id="next">
+                                        Next (<?php echo $nextPageCount; ?>) >
+                                    </button>
+                                </form>
                             </div> 
-                        </div>                       
-                    </div>
 
                     <div class="text-center">
                         <br><a href="HomePage.php"><button class="btn btn-primary" type="button">Back</button></a>
@@ -197,6 +215,23 @@
                 </div>
             </div>
         </div> 
+
+        <script>
+            // Save the current scroll position before the page is unloaded
+            window.onbeforeunload = function () {
+                sessionStorage.setItem('scrollPosition', window.scrollY);
+            };
+
+            // When the page is loaded, scroll to the saved position
+            window.onload = function () {
+                let scrollPosition = sessionStorage.getItem('scrollPosition');
+                if (scrollPosition) {
+                    window.scrollTo(0, scrollPosition); // Instantly scroll to the saved position
+                }
+            };
+        </script>
+
+
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     </body>
