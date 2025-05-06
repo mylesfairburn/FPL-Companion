@@ -9,6 +9,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="stylesheet.css" rel="stylesheet">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
 <body>
@@ -192,8 +193,39 @@
                     <tr>
                         <th>Name</th>
                         <th>Position</th>
-                        <th>Form (Previous 3 GMWs)</th>
-                        <th>Total Points</th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Form</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayFormInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">GA</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayGAInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">xGA</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayxGAInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Total Points</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayTotalPointsInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>Fixtures</th>
                         <th>ID</th>
                     </tr>
                     <?php
@@ -201,27 +233,26 @@
                         // Fetch player's kit path based on their element type
                         if ($players[$x]['element_type'] == 1) {
                             $query = $db->prepare("
-                                SELECT keeper_kit_path FROM Kits 
+                                SELECT keeper_kit FROM Kits 
                                 WHERE team_id = :teamID 
                             ");
-
+                    
                             $query->bindValue(':teamID', $players[$x]['team'], SQLITE3_TEXT);
                             $queryresult = $query->execute();
                             $result = $queryresult->fetchArray(SQLITE3_ASSOC);
-
-                            $kitDir = $result['keeper_kit_path'];
-                        } 
-                        else {
+                    
+                            $kitDir = $result['keeper_kit'];
+                        } else {
                             $query = $db->prepare("
-                                SELECT outfield_kit_path FROM Kits 
+                                SELECT outfield_kit FROM Kits 
                                 WHERE team_id = :teamID 
                             ");
-
+                    
                             $query->bindValue(':teamID', $players[$x]['team'], SQLITE3_TEXT);
                             $queryresult = $query->execute();
                             $result = $queryresult->fetchArray(SQLITE3_ASSOC);
-
-                            $kitDir = $result['outfield_kit_path'];
+                    
+                            $kitDir = $result['outfield_kit'];
                         }
                     
                         // Fetch player performance data from the FPL API
@@ -230,51 +261,99 @@
                         $response = file_get_contents($apiUrl);
                         $data = json_decode($response, true);
                     
-                        // Initialize variables to calculate form (average points over last 3 gameweeks)
-                        $last3Gameweeks = array_slice($data['history'], -3); // Get last 3 gameweeks of data
+                        // Initialize variables for past performance
+                        $last3Gameweeks = array_slice($data['history'], -3);
                         $totalPoints = 0;
+                        $totalExpectedGA = 0;
+                        $totalGA = 0;
                         $gameweekCount = 0;
                     
-                        // Loop through the last 3 gameweeks and calculate total points
                         foreach ($last3Gameweeks as $gameweek) {
-                            if ($gameweek['total_points'] > 0) {
-                                $totalPoints += $gameweek['total_points'];
-                                $gameweekCount++;
-                            }
+                            $totalExpectedGA += $gameweek['expected_goal_involvements'];
+                            $totalGA += $gameweek['goals_scored'] + $gameweek['assists'];
+                            $totalPoints += $gameweek['total_points'];
+                            $gameweekCount++;
                         }
                     
                         // Calculate the average points for the last 3 gameweeks
                         $averagePoints = $gameweekCount > 0 ? $totalPoints / $gameweekCount : 0;
                     
+                        // Fetch upcoming fixtures
+                        $upcomingFixtures = [];
+                        foreach ($data['fixtures'] as $fixture) {
+                            $teamID = $fixture['is_home'] ? $fixture['team_a'] : $fixture['team_h'];
+                    
+                            $query = $db->prepare("
+                                SELECT abbreviation FROM teams 
+                                WHERE id = :teamID 
+                            ");
+                    
+                            $query->bindValue(':teamID', $teamID, SQLITE3_TEXT);
+                            $queryresult = $query->execute();
+                            $result = $queryresult->fetchArray(SQLITE3_ASSOC);
+                    
+                            $upcomingFixtures[] = [
+                                'team' => $result['abbreviation'],
+                                'difficulty' => $fixture['difficulty'],
+                                'event' => $fixture['event']
+                            ];
+                        }
+                    
                         // Display the player's details in the table
                         echo "<tr>";
                         echo "<td><div class='d-flex align-items-center'><img src='$kitDir' class='rounded float-start' style='width: 30px; height: 40px;' alt='Kit Img'><span style='margin-left: 10px;'><b>" . $players[$x]['web_name'] . "</b></span></div></td>";
                         echo "<td>";
-                            switch ($players[$x]['element_type']) {
+                        switch ($players[$x]['element_type']) {
+                            case 1:
+                                echo "<p style='color:green;'>GKP</p>";
+                                break;
+                            case 2:
+                                echo "<p style='color:blue;'>DEF</p>";
+                                break;
+                            case 3:
+                                echo "<p style='color:orange;'>MID</p>";
+                                break;
+                            case 4:
+                                echo "<p style='color:red;'>FWD</p>";
+                                break;
+                        }
+                        echo "</td>";
+                    
+                        echo "<td><p>" . round($averagePoints, 1) . "</p></td>";
+                        echo "<td><p>" . $totalGA . "</p></td>";
+                        echo "<td><p>" . $totalExpectedGA . "</p></td>";
+                        echo "<td><p>" . $players[$x]['total_points'] . "</p></td>";
+                    
+                        echo "<td><div class='row'>";
+                        
+                        foreach ($upcomingFixtures as $fixture) {
+                            switch ($fixture['difficulty']){
                                 case 1:
-                                    echo "<p style='color:green;'>GKP</p>";
+                                    $color= "#46f131";
                                     break;
                                 case 2:
-                                    echo "<p style='color:blue;'>DEF</p>";
+                                    $color= "#1d7a12";
                                     break;
                                 case 3:
-                                    echo "<p style='color:orange;'>MID</p>";
+                                    $color= "#fca227";
                                     break;
                                 case 4:
-                                    echo "<p style='color:red;'>FWD</p>";
+                                    $color= "#ff6868";
+                                    break;
+                                case 5:
+                                    $color= "#b42626";
                                     break;
                             }
-                        echo "</td>";
+
+                            echo "<div class='col'>";
+                                echo "<div class='card pitch-card mx-auto text-center' style='width: 75px; height: 50px; background-color:$color; color: white;'><b><u>GW" . $fixture['event'] . "</u><br>" . $fixture['team'] . " (" . $fixture['difficulty'] . ")</b></div>";
+                            echo "</div>";
+                        }
+                        echo "</div></td>";
                     
-                        // Display Form (average points over last 3 gameweeks)
-                        echo "<td>";
-                        echo "<p>" . round($averagePoints, 1) . "</p>";  // PPG = Points per Gameweek
-                        echo "</td>";
-                    
-                        echo "<td>" . $players[$x]['total_points'] . "</td>";
-                        echo "<td class='smaller-text'>(" . $players[$x]['id'] . ")</td>";
+                        echo "<td class='smaller-text'><p>(" . $players[$x]['id'] . ")</p></td>";
                         echo "</tr>";
-                    }
+                    } // add a minutes average
                     ?>
                 </table>
 
@@ -322,6 +401,51 @@
                 }, 1); // Allow styles to reset
             }
         };
+
+        function DisplayFormInfo(){
+            Swal.fire({
+                title: "<strong><u>Form</u></strong>",
+                icon: "info",
+                text: "'Form' refers to the players average points over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayGAInfo(){
+            Swal.fire({
+                title: "<strong><u>GA</u></strong>",
+                icon: "info",
+                text: "'GA' refers to the players total goals and assists over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayxGAInfo(){
+            Swal.fire({
+                title: "<strong><u>xGA</u></strong>",
+                icon: "info",
+                text: "'xGA' refers to the players average expected goals and assists over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayTotalPointsInfo(){
+            Swal.fire({
+                title: "<strong><u>Total Points</u></strong>",
+                icon: "info",
+                text: "'Total Points' refers to the players total points over the course of the whole season.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
