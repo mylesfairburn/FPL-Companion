@@ -191,20 +191,12 @@
 
                 <table class="table table-bordered table-hover mt-3">
                     <tr>
-                        <th>Name</th>
+                        <th style="width: 100px;">Name</th>
                         <th>Position</th>
                         <th>
                             <div class="d-flex align-items-center">
                                 <p class="mb-0 me-1 align-middle">Form</p>
                                 <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayFormInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
-                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
-                                </button>
-                            </div>
-                        </th>
-                        <th>
-                            <div class="d-flex align-items-center">
-                                <p class="mb-0 me-1 align-middle">GA</p>
-                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayGAInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
                                     <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
                                 </button>
                             </div>
@@ -219,7 +211,39 @@
                         </th>
                         <th>
                             <div class="d-flex align-items-center">
-                                <p class="mb-0 me-1 align-middle">Total Points</p>
+                                <p class="mb-0 me-1 align-middle">GA</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayGAInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Avg Mins</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayAvgMinutesInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Avg Bonus</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayAvgBonusInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Clean Sheets</p>
+                                <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayCleanSheetsInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
+                                    <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
+                                </button>
+                            </div>
+                        </th>
+                        <th>
+                            <div class="d-flex align-items-center">
+                                <p class="mb-0 me-1 align-middle">Total Pts</p>
                                 <button class="btn p-0 border-0 bg-transparent align-middle" onclick="DisplayTotalPointsInfo()" style="width: 16px; height: 16px; display: inline-flex; align-items: center;">
                                     <img src="images/info-icon.png" alt="Info Card" style="width: 16px; height: 16px;">
                                 </button>
@@ -263,20 +287,27 @@
                     
                         // Initialize variables for past performance
                         $last3Gameweeks = array_slice($data['history'], -3);
+                        $totalMinutes = 0;
                         $totalPoints = 0;
                         $totalExpectedGA = 0;
                         $totalGA = 0;
+                        $totalBonus = 0;
+                        $totalCleanSheets = 0;
                         $gameweekCount = 0;
                     
                         foreach ($last3Gameweeks as $gameweek) {
+                            $totalMinutes += $gameweek['minutes'];
                             $totalExpectedGA += $gameweek['expected_goal_involvements'];
                             $totalGA += $gameweek['goals_scored'] + $gameweek['assists'];
                             $totalPoints += $gameweek['total_points'];
+                            $totalBonus += $gameweek['bonus'];
+                            $totalCleanSheets += $gameweek['clean_sheets'];
                             $gameweekCount++;
                         }
-                    
-                        // Calculate the average points for the last 3 gameweeks
+
                         $averagePoints = $gameweekCount > 0 ? $totalPoints / $gameweekCount : 0;
+                        $averageMinutes = $gameweekCount > 0 ? $totalMinutes / $gameweekCount : 0;
+                        $averageBonus = $gameweekCount > 0 ? $totalBonus / $gameweekCount : 0;
                     
                         // Fetch upcoming fixtures
                         $upcomingFixtures = [];
@@ -295,7 +326,8 @@
                             $upcomingFixtures[] = [
                                 'team' => $result['abbreviation'],
                                 'difficulty' => $fixture['difficulty'],
-                                'event' => $fixture['event']
+                                'event' => $fixture['event'],
+                                'is_home' => $fixture['is_home']
                             ];
                         }
                     
@@ -320,10 +352,13 @@
                         echo "</td>";
                     
                         echo "<td><p>" . round($averagePoints, 1) . "</p></td>";
-                        echo "<td><p>" . $totalGA . "</p></td>";
                         echo "<td><p>" . $totalExpectedGA . "</p></td>";
+                        echo "<td><p>" . $totalGA . "</p></td>";
+                        echo "<td><p>" . round($averageMinutes, 1) . "</p></td>";
+                        echo "<td><p>" . round($averageBonus, 1) . "</p></td>";
+                        echo "<td><p>" . round($totalCleanSheets, 1) . "</p></td>";
                         echo "<td><p>" . $players[$x]['total_points'] . "</p></td>";
-                    
+
                         echo "<td><div class='row'>";
                         
                         foreach ($upcomingFixtures as $fixture) {
@@ -345,15 +380,16 @@
                                     break;
                             }
 
+                            $homeOrAway = $fixture['is_home'] ? 'H' : 'A';
                             echo "<div class='col'>";
-                                echo "<div class='card pitch-card mx-auto text-center' style='width: 75px; height: 50px; background-color:$color; color: white;'><b><u>GW" . $fixture['event'] . "</u><br>" . $fixture['team'] . " (" . $fixture['difficulty'] . ")</b></div>";
+                                echo "<div class='card pitch-card mx-auto text-center' style='width: 75px; height: 50px; background-color:$color; color: white;'><b><u>GW" . $fixture['event'] . "</u><br>" . $fixture['team'] . " (" . $homeOrAway . ")</b></div>";
                             echo "</div>";
                         }
                         echo "</div></td>";
                     
                         echo "<td class='smaller-text'><p>(" . $players[$x]['id'] . ")</p></td>";
                         echo "</tr>";
-                    } // add a minutes average
+                    }
                     ?>
                 </table>
 
@@ -429,6 +465,39 @@
                 title: "<strong><u>xGA</u></strong>",
                 icon: "info",
                 text: "'xGA' refers to the players average expected goals and assists over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayAvgMinutesInfo(){
+            Swal.fire({
+                title: "<strong><u>Average Minutes</u></strong>",
+                icon: "info",
+                text: "'Avg Minutes' refers to the average minutes over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayAvgBonusInfo(){
+            Swal.fire({
+                title: "<strong><u>Average Bonus Points</u></strong>",
+                icon: "info",
+                text: "'Avg Bonus' refers to the average bonus points recieved by the player over the previous 3 gameweeks.",
+                focusConfirm: false,
+                confirmButtonText: `
+                    <i class="fa fa-thumbs-up"></i> Great!
+                `,
+            });
+        }
+        function DisplayCleanSheetsInfo(){
+            Swal.fire({
+                title: "<strong><u>Clean Sheets</u></strong>",
+                icon: "info",
+                text: "'Clean Sheets' refers to the total clean sheets kept by the players team over the previous 3 gameweeks.",
                 focusConfirm: false,
                 confirmButtonText: `
                     <i class="fa fa-thumbs-up"></i> Great!
