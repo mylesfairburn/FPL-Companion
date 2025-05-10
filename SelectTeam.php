@@ -371,34 +371,19 @@
                             <div class="container text-center">
                                 <div class="row">
                                     <div class="col">
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> GKP</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> GKP</i></div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
                                     </div>
                                     <div class="col">
-                                    </div>
-                                </div>
-                            </div>
-                            <br>
-                            <div class="container text-center">
-                                <div class="row">
-                                    <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
-                                    </div>
-                                    <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
-                                    </div>
-                                    <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
-                                    </div>
-                                    <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> DEF</div>
                                     </div>
                                 </div>
                             </div>
@@ -406,19 +391,19 @@
                             <div class="container text-center">
                                 <div class="row">
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> MID</div>
                                     </div>
                                 </div>
                             </div>
@@ -428,13 +413,13 @@
                                     <div class="col">
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
                                     </div>
                                     <div class="col">
-                                        <div class="card pitch-card mx-auto" style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
+                                        <div class="card pitch-card mx-auto" onclick=searchPlyr() style="width: 75px; height: 100px; background-color:#ffffff9e; color: #ffffff;"><i class='bx bxs-user-plus'></i> FWD</div>
                                     </div>
                                     <div class="col">
                                     </div>
@@ -465,6 +450,32 @@
                         <h5>Player watchlist:</h5>
                     </div>                       
                 </div>
+
+                <!--search player box that pops up when you click a player -->
+                <div id="searchPlyr" class="searchPlyr">
+                <div class="popup-content">
+                    <span class="close" onclick="closeModal()">&times;</span>
+                    <h4>Search for a player</h4>
+                </div>
+                </div>
+
+                <!--javascript to show the search player box when add player is clicked -->
+                <script>
+                    function searchPlyr() {
+                    document.getElementById("searchPlyr").style.display = "block";
+                    }
+
+                    function closeModal() {
+                    document.getElementById("searchPlyr").style.display = "none";
+                    }
+
+                    window.onclick = function(event) {
+                    const popup = document.getElementById("searchPlyr");
+                    if (event.target === popup) {
+                        popup.style.display = "none";
+                    }
+                    }
+                </script>
 
                 <br>
 
