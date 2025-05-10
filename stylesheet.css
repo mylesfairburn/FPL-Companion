@@ -14,3 +14,12 @@ body {
 .pitch-card:hover{
     border: solid 2px white ;
 }
+
+.dropdown-item.active {
+    background-color: var(--bs-info);
+    color: white !important;
+}
+
+.dropdown-item:hover {
+    background-color: var(--bs-info-bg-subtle);
+}
