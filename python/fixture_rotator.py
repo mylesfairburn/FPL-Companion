@@ -112,7 +112,7 @@ def build_rotation_table(fixtures_df, teams_df, n_gameweeks=8):
     team_id_to_name = dict(zip(teams_df['id'], teams_df['short_name']))
     strength = teams_df.set_index('id')[
         ['strength_attack_home', 'strength_attack_away',
-         'strength_defence_home', 'strength_defence_away']
+            'strength_defence_home', 'strength_defence_away']
     ]
 
     rows = []
@@ -168,14 +168,14 @@ if __name__ == '__main__':
 
     if MODE == 'preseason':
         print("Preseason mode - using last season's actual fixture results, "
-              "ClubElo for any newly promoted teams")
+                "ClubElo for any newly promoted teams")
         strength_df = get_previous_season_fixture_strength()
         elo_df = get_clubelo_ratings()
         teams_df = apply_previous_season_strength(teams_df, strength_df, elo_df, CLUBELO_NAME_MAP)
     else:
         if strength_data_is_empty(teams_df):
             print("Warning: inseason mode selected, but FPL strength data is still empty - "
-                  "switch MODE back to 'preseason' until real matches have been played")
+                    "switch MODE back to 'preseason' until real matches have been played")
 
     rotation_df = build_rotation_table(fixtures_df, teams_df, n_gameweeks=8)
 
