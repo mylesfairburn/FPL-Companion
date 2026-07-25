@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+jinja2
+starlette<1.0.0
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
+requests
