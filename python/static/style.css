@@ -130,3 +130,39 @@ table th { color: var(--accent-dark); }
 .rec-rating { background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-weight: 600; font-size: 0.7rem; }
 .rec-cost { color: #888; font-size: 0.72rem; white-space: nowrap; }
 .rec-empty { color: #bbb; font-style: italic; font-size: 0.82rem; }
+/* ---- Mobile: scale everything down for phones ---- */
+@media (max-width: 575.98px) {
+    body { font-size: 0.9rem; }
+    .container { padding-left: 10px; padding-right: 10px; }
+
+    .navbar-brand { font-size: 1.05rem; }
+    #modeToggle { font-size: 0.72rem; padding: 2px 8px; }
+    .nav-tabs .nav-link, .nav-pills .nav-link { font-size: 0.82rem; padding: 4px 8px; }
+
+    /* Players table */
+    .table { font-size: 0.78rem; }
+    .table th, .table td { padding: 0.4rem 0.3rem; }
+    .shirt { height: 18px; margin-right: 4px; }
+    .shirt-sm { height: 15px; }
+    .rating-badge { padding: 1px 7px; font-size: 0.76rem; }
+    .gw-cell { min-width: 34px; font-size: 0.7rem; padding: 2px 3px; margin-right: 2px; }
+    .gw-cell small { font-size: 0.5rem; }
+
+    /* Rotation table */
+    .rotation-table td, .rotation-table th { font-size: 0.7rem; }
+    .fixture-cell { padding: 2px 4px; font-size: 0.7rem; }
+
+    /* Rotation pair cards */
+    .pair-card { padding: 8px 10px; margin-bottom: 10px; }
+    .pair-team-label { width: 70px; font-size: 0.76rem; }
+    .pair-row { gap: 4px; }
+    .pair-row [style*="44px"] { width: 36px !important; }
+    .section-heading { font-size: 0.95rem; }
+    .pair-meta { font-size: 0.66rem; }
+    .rec-grid { grid-template-columns: 34px auto 14px minmax(0, 1fr); gap: 5px 5px; }
+    .rec-pos { font-size: 0.66rem; }
+    .rec-slot { font-size: 0.78rem; gap: 4px; }
+    .rec-rating { font-size: 0.64rem; padding: 0 4px; }
+    .rec-cost { font-size: 0.66rem; }
+    .rec-empty { font-size: 0.76rem; }
+}
