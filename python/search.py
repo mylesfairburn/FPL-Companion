@@ -1,6 +1,7 @@
 import pandas as pd
 
 def search_player(name, position_dfs):
+    """Case-insensitive partial name search across all positions. Returns matching rows with their rating."""
     name = name.lower()
     results = []
 
@@ -20,9 +21,7 @@ def search_player(name, position_dfs):
         return None
 
     combined = pd.concat(results)
-
-    display_cols = ['web_name', 'first_name', 'second_name', 'position']
-    if 'rating' in combined.columns:
-        display_cols.append('rating')
-
-    return combined[display_cols]
+    cols = [c for c in ['web_name', 'first_name', 'second_name', 'team_code',
+                        'position', 'rating', 'predicted_points', 'next_gameweeks']
+            if c in combined.columns]
+    return combined[cols]

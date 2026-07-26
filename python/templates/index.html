@@ -5,103 +5,356 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FPL Companion</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        :root {
-            --bs-primary: #37003c;
-            --bs-primary-rgb: 55, 0, 60;
-        }
-        body {
-            background-color: #ffffff;
-        }
-        .navbar {
-            background-color: #37003c;
-        }
-        .navbar-brand {
-            color: #ffffff !important;
-            font-weight: 600;
-        }
-        .btn-primary {
-            background-color: #37003c;
-            border-color: #37003c;
-        }
-        .btn-primary:hover {
-            background-color: #4d0054;
-            border-color: #4d0054;
-        }
-        .rating-badge {
-            background-color: #37003c;
-            color: #ffffff;
-            border-radius: 6px;
-            padding: 2px 10px;
-            font-weight: 600;
-        }
-        table th {
-            color: #37003c;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
     <nav class="navbar navbar-dark mb-4">
-        <div class="container">
+        <div class="container d-flex justify-content-between align-items-center">
             <span class="navbar-brand mb-0 h1">FPL Companion</span>
+            <button id="modeToggle" class="btn btn-sm"></button>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="row justify-content-center mb-4">
-            <div class="col-md-6">
-                <input type="text" id="searchInput" class="form-control form-control-lg" placeholder="Search a player...">
+    <div class="container mb-5">
+
+        <ul class="nav nav-tabs mb-4" id="mainTabs">
+            <li class="nav-item"><button class="nav-link active" data-pane="pane-players">Players</button></li>
+            <li class="nav-item"><button class="nav-link" data-pane="pane-rotator">Fixture Rotator</button></li>
+        </ul>
+
+        <!-- Players (search + ratings combined) -->
+        <div id="pane-players" class="tab-pane">
+            <div class="row mb-3 g-2">
+                <div class="col-md-6">
+                    <input type="text" id="searchInput" class="form-control" placeholder="Search a player...">
+                </div>
+                <div class="col-md-3">
+                    <select id="positionSelect" class="form-select">
+                        <option>All</option>
+                        <option>Goalkeeper</option>
+                        <option>Defender</option>
+                        <option>Midfielder</option>
+                        <option>Forward</option>
+                    </select>
+                </div>
             </div>
+            <table class="table table-hover align-middle">
+                <thead><tr><th>Player</th><th>Position</th><th>Rating</th><th>Next 3 GWs (pred. pts)</th></tr></thead>
+                <tbody id="playersResultsBody"></tbody>
+            </table>
         </div>
 
-        <div class="row justify-content-center">
-            <div class="col-md-8">
-                <table class="table table-hover align-middle">
-                    <thead>
-                        <tr>
-                            <th>Player</th>
-                            <th>Position</th>
-                            <th>Rating</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultsBody"></tbody>
+        <!-- Fixture Rotator -->
+        <div id="pane-rotator" class="tab-pane d-none">
+            <ul class="nav nav-pills mb-3" id="rotationTabs">
+                <li class="nav-item"><button class="nav-link active" data-category="defender">Defenders</button></li>
+                <li class="nav-item"><button class="nav-link" data-category="attacker">Attackers</button></li>
+            </ul>
+
+            <h6 class="section-heading">Best rotation partners</h6>
+            <div id="pairsContainer" class="mb-4"></div>
+
+            <h6 class="section-heading">Full fixture list</h6>
+            <p class="text-muted small">Click a team to highlight and pin it to the top.</p>
+            <div class="table-responsive">
+                <table class="table table-sm rotation-table" id="rotationTable">
+                    <thead><tr id="rotationHeader"></tr></thead>
+                    <tbody id="rotationBody"></tbody>
                 </table>
             </div>
         </div>
+
     </div>
 
     <script>
-        const input = document.getElementById('searchInput');
-        const resultsBody = document.getElementById('resultsBody');
-        let debounceTimer;
+        // ---- Tabs ----
+        document.querySelectorAll('#mainTabs .nav-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#mainTabs .nav-link').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('d-none'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.pane).classList.remove('d-none');
+            });
+        });
 
-        input.addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            const query = input.value.trim();
+        // ---- Players (search + ratings combined) ----
+        const searchInput = document.getElementById('searchInput');
+        const positionSelect = document.getElementById('positionSelect');
+        const playersResultsBody = document.getElementById('playersResultsBody');
+        let searchDebounce;
 
-            if (!query) {
-                resultsBody.innerHTML = '';
-                return;
-            }
+        // FPL hotlinks shirt PNGs keyed on team_code (NOT team id); GK is the _1 variant.
+        function shirtUrl(teamCode, position) {
+            if (teamCode == null) return '';
+            const gk = position === 'Goalkeeper' ? '_1' : '';
+            return `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${teamCode}${gk}-66.png`;
+        }
+        function shirtImg(teamCode, position, cls) {
+            const url = shirtUrl(teamCode, position);
+            if (!url) return '';
+            return `<img class="${cls}" src="${url}" alt="" onerror="this.style.display='none'">`;
+        }
 
-            debounceTimer = setTimeout(() => {
+        // Next-3-GW predicted points, each cell coloured by that fixture's
+        // difficulty using the SAME green->red key as the rotator (fixed 1-5 scale).
+        function gwCells(nextGws) {
+            if (!nextGws || !nextGws.length) return '<span class="text-muted small">&mdash;</span>';
+            return nextGws.map(g => {
+                const color = (g.difficulty != null) ? colorFor(g.difficulty, 1, 5) : '#eeeeee';
+                const pts = (g.points != null) ? Number(g.points).toFixed(1) : '&ndash;';
+                const ha = g.was_home === true ? 'H' : (g.was_home === false ? 'A' : '');
+                const opp = g.opponent ?? '';
+                return `<span class="gw-cell" style="background-color:${color}" title="GW${g.event}: ${opp} (${ha})">${pts}<small>${opp} ${ha}</small></span>`;
+            }).join('');
+        }
+
+        function renderPlayers(results) {
+            playersResultsBody.innerHTML = '';
+            results.forEach(p => {
+                const row = document.createElement('tr');
+                const name = p.web_name ?? `${p.first_name ?? ''} ${p.second_name ?? ''}`.trim();
+                row.innerHTML = `
+                    <td>${shirtImg(p.team_code, p.position, 'shirt')}<span class="player-name">${name}</span></td>
+                    <td>${p.position ?? ''}</td>
+                    <td><span class="rating-badge">${p.rating ?? '-'}</span></td>
+                    <td>${gwCells(p.next_gameweeks)}</td>`;
+                playersResultsBody.appendChild(row);
+            });
+        }
+
+        function loadPlayers() {
+            const query = searchInput.value.trim();
+            if (query) {
                 fetch(`/api/search?q=${encodeURIComponent(query)}`)
                     .then(res => res.json())
-                    .then(data => {
-                        resultsBody.innerHTML = '';
-                        data.results.forEach(player => {
-                            const row = document.createElement('tr');
-                            row.innerHTML = `
-                                <td>${player.web_name}</td>
-                                <td>${player.position}</td>
-                                <td><span class="rating-badge">${player.rating ?? '-'}</span></td>
-                            `;
-                            resultsBody.appendChild(row);
-                        });
-                    });
-            }, 250);
+                    .then(data => renderPlayers(data.results));
+            } else {
+                fetch(`/api/ratings?position=${encodeURIComponent(positionSelect.value)}&top_n=20`)
+                    .then(res => res.json())
+                    .then(data => renderPlayers(data.results));
+            }
+        }
+
+        searchInput.addEventListener('input', () => {
+            // Search spans all positions, so a lingering position filter is
+            // misleading (e.g. "Goalkeeper" selected while searching a forward).
+            if (searchInput.value.trim() !== '') positionSelect.value = 'All';
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(loadPlayers, 250);
         });
+        positionSelect.addEventListener('change', loadPlayers);
+
+        // ---- Fixture Rotator ----
+        const rotationHeader = document.getElementById('rotationHeader');
+        const rotationBody = document.getElementById('rotationBody');
+        const pairsContainer = document.getElementById('pairsContainer');
+        let currentCategory = 'defender';
+        let selectedTeams = new Set();
+        let latestRotationData = null;
+
+        function colorFor(value, min, max) {
+            if (max === min) return 'hsl(120, 70%, 85%)';
+            const ratio = (value - min) / (max - min);
+            const hue = 120 - (ratio * 120);
+            return `hsl(${hue}, 70%, 82%)`;
+        }
+
+        function allDifficulties(data) {
+            const values = [];
+            data.teams.forEach(t => Object.values(t.fixtures).forEach(f => values.push(f.difficulty)));
+            return values;
+        }
+
+        function fixtureCell(fixture, min, max) {
+            if (!fixture) return '<td></td>';
+            const color = colorFor(fixture.difficulty, min, max);
+            return `<td><span class="fixture-cell" style="background-color:${color}">${fixture.opponent}</span></td>`;
+        }
+
+        function renderPairRow(teamName, teamCode, fixtures, gameweeks, min, max) {
+            let cells = `<span class="pair-team-label">${shirtImg(teamCode, null, 'shirt-sm')}${teamName}</span>`;
+            gameweeks.forEach(gw => {
+                const f = fixtures[gw];
+                if (!f) { cells += '<span style="width:44px;"></span>'; return; }
+                const color = colorFor(f.difficulty, min, max);
+                cells += `<span class="fixture-cell" style="background-color:${color}; width:44px; text-align:center;">${f.opponent}</span>`;
+            });
+            return `<div class="pair-row">${cells}</div>`;
+        }
+
+        function recSlot(pl) {
+            if (!pl) return '<span class="rec-empty">&mdash;</span>';
+            return `<span class="rec-slot">
+                ${shirtImg(pl.team_code, pl.position, 'shirt-sm')}
+                <span class="player-name">${pl.web_name ?? ''}</span>
+                <span class="rec-rating">${pl.rating != null ? Math.round(pl.rating) : '-'}</span>
+                <span class="rec-cost">${pl.cost != null ? '£' + pl.cost.toFixed(1) + 'm' : ''}</span>
+            </span>`;
+        }
+
+        // One grid row per position: LABEL  player_a  +  player_b
+        function recPlayersHtml(positionPairs) {
+            if (!positionPairs || !positionPairs.length) return '';
+            const rows = positionPairs.map(pp => `
+                <span class="rec-pos">${pp.label}</span>
+                ${recSlot(pp.player_a)}
+                <span class="rec-plus">+</span>
+                ${recSlot(pp.player_b)}
+            `).join('');
+            return `<div class="rec-grid">${rows}</div>`;
+        }
+
+        function renderRotationTable() {
+            if (!latestRotationData) return;
+            const data = latestRotationData;
+            const gameweeks = data.gameweeks.map(String);
+            const values = allDifficulties(data);
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+
+            rotationHeader.innerHTML = '<th class="team-col">Team</th>';
+            gameweeks.forEach(gw => {
+                const th = document.createElement('th');
+                th.textContent = `GW${gw}`;
+                rotationHeader.appendChild(th);
+            });
+
+            // Selected teams pinned to top, in their original relative order otherwise
+            const sortedTeams = [...data.teams].sort((a, b) => {
+                const aSel = selectedTeams.has(a.team_name);
+                const bSel = selectedTeams.has(b.team_name);
+                if (aSel && !bSel) return -1;
+                if (!aSel && bSel) return 1;
+                return 0;
+            });
+
+            rotationBody.innerHTML = '';
+            sortedTeams.forEach(team => {
+                const tr = document.createElement('tr');
+                if (selectedTeams.has(team.team_name)) tr.classList.add('selected-team');
+                let rowHtml = `<td class="team-col">${shirtImg(team.team_code, null, 'shirt-sm')} ${team.team_name}</td>`;
+                gameweeks.forEach(gw => {
+                    rowHtml += fixtureCell(team.fixtures[gw], min, max);
+                });
+                tr.innerHTML = rowHtml;
+                tr.querySelector('.team-col').addEventListener('click', () => {
+                    if (selectedTeams.has(team.team_name)) {
+                        selectedTeams.delete(team.team_name);
+                    } else {
+                        selectedTeams.add(team.team_name);
+                    }
+                    renderRotationTable();
+                });
+                rotationBody.appendChild(tr);
+            });
+        }
+
+        function loadRotation() {
+            fetch(`/api/rotation?category=${currentCategory}`)
+                .then(res => res.json())
+                .then(data => {
+                    latestRotationData = data;
+                    const gameweeks = data.gameweeks.map(String);
+                    const values = allDifficulties(data);
+                    const min = Math.min(...values);
+                    const max = Math.max(...values);
+
+                    pairsContainer.innerHTML = '';
+
+                    const buildPairCard = (pair) => {
+                        const card = document.createElement('div');
+                        card.className = 'pair-card';
+                        const positionPairs = pair.position_pairs || [];
+                        card.innerHTML = `
+                            ${renderPairRow(pair.team_a, pair.team_a_code, pair.team_a_fixtures, gameweeks, min, max)}
+                            ${renderPairRow(pair.team_b, pair.team_b_code, pair.team_b_fixtures, gameweeks, min, max)}
+                            ${positionPairs.length ? `<div class="rec-players">
+                                <div class="pair-meta">Rotate these players</div>
+                                ${recPlayersHtml(positionPairs)}
+                            </div>` : ''}
+                        `;
+                        return card;
+                    };
+
+                    const INITIAL_PAIRS = 2;
+                    data.pairs.slice(0, INITIAL_PAIRS).forEach(pair => {
+                        pairsContainer.appendChild(buildPairCard(pair));
+                    });
+
+                    const remaining = data.pairs.slice(INITIAL_PAIRS);
+                    if (remaining.length) {
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.className = 'btn btn-outline-primary btn-sm';
+                        let expanded = false;
+                        let extraCards = [];
+
+                        const renderToggle = () => {
+                            toggleBtn.textContent = expanded ? 'Show less' : `Show all (${data.pairs.length})`;
+                        };
+
+                        toggleBtn.addEventListener('click', () => {
+                            if (expanded) {
+                                extraCards.forEach(c => c.remove());
+                                extraCards = [];
+                            } else {
+                                extraCards = remaining.map(pair => {
+                                    const card = buildPairCard(pair);
+                                    pairsContainer.insertBefore(card, toggleBtn);
+                                    return card;
+                                });
+                            }
+                            expanded = !expanded;
+                            renderToggle();
+                        });
+
+                        renderToggle();
+                        pairsContainer.appendChild(toggleBtn);
+                    }
+
+                    renderRotationTable();
+                });
+        }
+
+        document.querySelectorAll('#rotationTabs .nav-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#rotationTabs .nav-link').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentCategory = btn.dataset.category;
+                loadRotation();
+            });
+        });
+
+        // ---- Mode toggle (button, not dropdown) ----
+        const modeToggle = document.getElementById('modeToggle');
+        let currentMode = "{{ mode }}";
+
+        function renderModeToggle() {
+            modeToggle.textContent = currentMode === 'preseason' ? 'Preseason' : 'In-season';
+        }
+        renderModeToggle();
+
+        modeToggle.addEventListener('click', () => {
+            const newMode = currentMode === 'preseason' ? 'inseason' : 'preseason';
+            modeToggle.disabled = true;
+            fetch(`/api/mode?mode=${newMode}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(result => {
+                    modeToggle.disabled = false;
+                    if (result.status === 'error') {
+                        alert(`Couldn't switch mode: ${result.detail}`);
+                        return;
+                    }
+                    currentMode = newMode;
+                    renderModeToggle();
+                    loadPlayers();
+                    loadRotation();
+                });
+        });
+
+        // ---- Initial load ----
+        loadPlayers();
+        loadRotation();
     </script>
 
 </body>
