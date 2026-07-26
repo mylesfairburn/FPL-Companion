@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FPL Companion</title>
+    <link rel="apple-touch-icon" href="../data/images/iphone_icon.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -19,33 +20,157 @@
     <div class="container mb-5">
 
         <ul class="nav nav-tabs mb-4" id="mainTabs">
-            <li class="nav-item"><button class="nav-link active" data-pane="pane-players">Players</button></li>
+            <li class="nav-item"><button class="nav-link active" data-pane="pane-team">My Team</button></li>
+            <li class="nav-item"><button class="nav-link" data-pane="pane-players">Players</button></li>
             <li class="nav-item"><button class="nav-link" data-pane="pane-rotator">Fixture Rotator</button></li>
         </ul>
 
-        <!-- Players (search + ratings combined) -->
-        <div id="pane-players" class="tab-pane">
-            <div class="row mb-3 g-2">
-                <div class="col-md-6">
-                    <input type="text" id="searchInput" class="form-control" placeholder="Search a player...">
+        <!-- ============ MY TEAM ============ -->
+        <div id="pane-team" class="tab-pane">
+
+            <!-- First-run prompt for the FPL ID -->
+            <div id="idPrompt" class="id-prompt d-none">
+                <h5 class="mb-2">Connect your FPL team</h5>
+                <p class="text-muted small mb-3">Enter your FPL ID to load your squad. We'll remember it on this device.</p>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <input type="number" id="idInput" class="form-control" style="max-width:220px" placeholder="e.g. 1234567">
+                    <span class="info-icon" tabindex="0" role="button" aria-label="How to find your FPL ID"
+                            data-tip="Log in at fantasy.premierleague.com, select 'Pick Team' then select 'Gameweek History'. Look at the address bar: fantasy.premierleague.com/entry/XXXXXX/... - that number (XXXXXX) is your FPL ID.">i</span>
+                    <button id="idSave" class="btn btn-primary">Load team</button>
                 </div>
-                <div class="col-md-3">
-                    <select id="positionSelect" class="form-select">
-                        <option>All</option>
-                        <option>Goalkeeper</option>
-                        <option>Defender</option>
-                        <option>Midfielder</option>
-                        <option>Forward</option>
-                    </select>
-                </div>
+                <div id="idError" class="text-danger small mt-2"></div>
             </div>
-            <table class="table table-hover align-middle">
-                <thead><tr><th>Player</th><th>Position</th><th>Rating</th><th>3 GWs (pred. pts)</th></tr></thead>
-                <tbody id="playersResultsBody"></tbody>
-            </table>
+
+            <!-- Loaded team -->
+            <div id="teamContent" class="d-none">
+
+                <!-- Header -->
+                <div class="team-header">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h4 class="team-name mb-0" id="teamName"></h4>
+                            <div class="text-muted small" id="managerName"></div>
+                        </div>
+                        <div class="text-end">
+                            <div class="gw-nav" id="gwNav">
+                                <button id="gwPrev" class="gw-btn">&#9664;</button>
+                                <span id="gwLabel" class="gw-label">GW</span>
+                                <button id="gwNext" class="gw-btn">&#9654;</button>
+                            </div>
+                            <div class="d-flex gap-1 justify-content-end mt-1 flex-wrap">
+                                <button id="saveTeamBtn" class="btn btn-sm btn-primary">Save team</button>
+                                <button id="resetBtn" class="btn btn-sm btn-outline-primary d-none">Reset to actual</button>
+                                <button id="changeId" class="btn btn-sm btn-outline-primary">Change ID</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-chips" id="statChips"></div>
+                </div>
+
+                <div id="teamUnavailable" class="alert alert-secondary d-none"></div>
+
+                <!-- Team builder (preseason) -->
+                <div id="teamBuilder" class="d-none">
+                    <div class="builder-bar">
+                        <span id="builderBudget" class="builder-stat"></span>
+                        <span id="builderCount" class="builder-stat"></span>
+                        <div class="ms-auto d-flex gap-2">
+                            <button id="builderSave" class="btn btn-sm btn-primary" disabled>Save team</button>
+                            <button id="builderClear" class="btn btn-sm btn-outline-primary">Clear</button>
+                            <button id="builderCancel" class="btn btn-sm btn-link">cancel</button>
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-lg-5"><div id="builderSquad"></div></div>
+                        <div class="col-lg-7">
+                            <div class="picker-filters mb-2">
+                                <div class="search-clear-wrap w-100 mb-2">
+                                    <input id="builderSearch" class="form-control form-control-sm" placeholder="Search player...">
+                                    <button class="search-clear" id="builderSearchClear" type="button">&times;</button>
+                                </div>
+                                <div class="d-flex gap-2 mb-2 flex-wrap">
+                                    <select id="builderPos" class="form-select form-select-sm" style="max-width:130px">
+                                        <option value="All">All positions</option>
+                                        <option>GK</option><option>DEF</option><option>MID</option><option>FWD</option>
+                                    </select>
+                                    <select id="builderTeam" class="form-select form-select-sm" style="max-width:120px">
+                                        <option value="All">All teams</option>
+                                    </select>
+                                    <button id="builderReset" class="btn btn-sm btn-outline-primary">Reset filters</button>
+                                </div>
+                                <div class="price-range">
+                                    <div class="price-label">Price: <span id="builderPriceLabel"></span></div>
+                                    <div class="range-wrap">
+                                        <div class="range-fill" id="builderPriceFill"></div>
+                                        <input type="range" id="builderPriceMin" min="3.5" max="17" step="0.5" value="3.5">
+                                        <input type="range" id="builderPriceMax" min="3.5" max="17" step="0.5" value="17">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="builderList" class="builder-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pitch | Recommended transfers | Player search (inline) -->
+                <div id="teamBody" class="row g-4 mt-1">
+
+                    <!-- Transfer banner spans the full width, above the pitch -->
+                    <div class="col-12"><div id="transferBanner" class="sub-banner d-none"></div></div>
+
+                    <!-- Pitch -->
+                    <div class="col-lg-5">
+                        <div id="subBanner" class="sub-banner d-none"></div>
+
+                        <div class="pitch-wrap">
+                            <div class="pitch" id="pitch"></div>
+                            <div class="bench" id="bench"></div>
+                        </div>
+
+                        <div class="pitch-actions mt-3 mb-1">
+                            <button id="optimiseBtn" class="btn btn-sm btn-primary">Optimise lineup</button>
+                            <button id="optCaptainBtn" class="btn btn-sm btn-primary">Optimise captaincy</button>
+                            <button id="editDraftBtn" class="btn btn-sm btn-outline-primary d-none">Make transfers</button>
+                        </div>
+                        <p class="text-muted small mb-0">Tap a player to set captain, substitute or transfer. Changes are a preview &mdash; apply them in the FPL app.</p>
+                    </div>
+
+                    <!-- Recommended transfers -->
+                    <div class="col-lg-2">
+                        <h6 class="section-heading">Recommended transfers</h6>
+                        <div id="transferRecs"></div>
+                    </div>
+
+                    <!-- Player search -->
+                    <div class="col-lg-5">
+                        <h6 class="section-heading">Find players</h6>
+                        <div id="playerSearch"></div>
+                    </div>
+
+                    <!-- Leagues + news -->
+                    <div class="col-12">
+                        <div class="row g-3 mt-1">
+                            <div class="col-lg-8" id="leaguesSection">
+                                <h6 class="section-heading">Your leagues</h6>
+                                <div id="leaguesList"></div>
+                            </div>
+                            <div class="col-lg-4">
+                                <h6 class="section-heading">News feed</h6>
+                                <p class="text-muted small mb-0" id="newsPlaceholder">Injury &amp; transfer news would go here.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
         </div>
 
-        <!-- Fixture Rotator -->
+        <!-- ============ PLAYERS ============ -->
+        <div id="pane-players" class="tab-pane d-none">
+            <div id="playersTabSearch"></div>
+        </div>
+
+        <!-- ============ FIXTURE ROTATOR ============ -->
         <div id="pane-rotator" class="tab-pane d-none">
             <ul class="nav nav-pills mb-3" id="rotationTabs">
                 <li class="nav-item"><button class="nav-link active" data-category="defender">Defenders</button></li>
@@ -67,6 +192,24 @@
 
     </div>
 
+    <!-- Player pop-up -->
+    <div id="playerModal" class="player-modal d-none">
+        <div class="pm-backdrop" id="pmBackdrop"></div>
+        <div class="pm-card">
+            <button class="pm-close" id="pmClose">&times;</button>
+            <div class="pm-head">
+                <span id="pmKit"></span>
+                <div><div class="pm-name" id="pmName"></div><div class="pm-sub" id="pmSub"></div></div>
+            </div>
+            <div class="pm-actions" id="pmActions"></div>
+            <div id="pmTransfer" class="pm-transfer d-none"></div>
+            <div class="pm-section-label">Upcoming fixtures</div>
+            <div id="pmUpcoming" class="pm-fixtures"></div>
+            <div class="pm-section-label">Recent form</div>
+            <div id="pmForm"></div>
+        </div>
+    </div>
+
     <script>
         // ---- Tabs ----
         document.querySelectorAll('#mainTabs .nav-link').forEach(btn => {
@@ -75,20 +218,15 @@
                 document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('d-none'));
                 btn.classList.add('active');
                 document.getElementById(btn.dataset.pane).classList.remove('d-none');
+                if (btn.dataset.pane === 'pane-players') ensurePlayers().then(() => playersTabSearch.refresh());
             });
         });
 
-        // ---- Players (search + ratings combined) ----
-        const searchInput = document.getElementById('searchInput');
-        const positionSelect = document.getElementById('positionSelect');
-        const playersResultsBody = document.getElementById('playersResultsBody');
-        let searchDebounce;
-
-        // FPL hotlinks shirt PNGs keyed on team_code (NOT team id); GK is the _1 variant.
+        // ---- Shirt kits ----
         function shirtUrl(teamCode, position) {
             if (teamCode == null) return '';
-            const gk = position === 'Goalkeeper' ? '_1' : '';
-            return `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${teamCode}${gk}-66.png`;
+            const isGk = position === 'Goalkeeper' || position === 'GK';
+            return `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${teamCode}${isGk ? '_1' : ''}-66.png`;
         }
         function shirtImg(teamCode, position, cls) {
             const url = shirtUrl(teamCode, position);
@@ -96,56 +234,1056 @@
             return `<img class="${cls}" src="${url}" alt="" onerror="this.style.display='none'">`;
         }
 
-        // Next-3-GW predicted points, each cell coloured by that fixture's
-        // difficulty using the SAME green->red key as the rotator (fixed 1-5 scale).
-        function gwCells(nextGws) {
-            if (!nextGws || !nextGws.length) return '<span class="text-muted small">&mdash;</span>';
-            return nextGws.map(g => {
-                const color = (g.difficulty != null) ? colorFor(g.difficulty, 1, 5) : '#eeeeee';
-                const pts = (g.points != null) ? Number(g.points).toFixed(1) : '&ndash;';
+        // Small clear-button helper for search inputs.
+        function wireClear(input, btn, cb) {
+            const upd = () => { btn.style.display = input.value ? '' : 'none'; };
+            input.addEventListener('input', upd);
+            btn.addEventListener('click', () => { input.value = ''; upd(); if (cb) cb(); });
+            upd();
+        }
+
+        // =====================================================================
+        //  MY TEAM
+        // =====================================================================
+        const FPL_ID_KEY = 'fpl_team_id';
+        const idPrompt = document.getElementById('idPrompt');
+        const idInput = document.getElementById('idInput');
+        const idSave = document.getElementById('idSave');
+        const idError = document.getElementById('idError');
+        const teamContent = document.getElementById('teamContent');
+
+        let teamView = null;
+        let workingSquad = null;
+        let captainId = null, viceId = null;
+        let selectedEvent = null;
+        let subSource = null;   // id of the player currently being substituted
+        let subEligible = new Set();
+        let pendingOuts = [];   // players marked for transfer out (multi-select)
+        let activeOut = null;   // id of the pending-out currently being replaced
+
+        function getSavedId() { return localStorage.getItem(FPL_ID_KEY); }
+        function showResetBtn() { document.getElementById('resetBtn').classList.remove('d-none'); }
+
+        function showPrompt() {
+            idPrompt.classList.remove('d-none');
+            teamContent.classList.add('d-none');
+        }
+
+        idSave.addEventListener('click', () => {
+            const val = idInput.value.trim();
+            if (!/^\d+$/.test(val)) { idError.textContent = 'Enter a numeric FPL ID.'; return; }
+            idError.textContent = '';
+            localStorage.setItem(FPL_ID_KEY, val);
+            idPrompt.classList.add('d-none');
+            selectedEvent = null;
+            loadTeam();
+        });
+        idInput.addEventListener('keydown', e => { if (e.key === 'Enter') idSave.click(); });
+
+        document.getElementById('changeId').addEventListener('click', () => {
+            idInput.value = getSavedId() || '';
+            showPrompt();
+        });
+
+        function loadTeam() {
+            const id = getSavedId();
+            if (!id) { showPrompt(); return; }
+            const evParam = selectedEvent ? `&event=${selectedEvent}` : '';
+            fetch(`/api/team?team_id=${id}${evParam}`)
+                .then(res => res.json())
+                .then(renderTeam)
+                .catch(() => { idError.textContent = 'Failed to load team.'; showPrompt(); });
+        }
+
+        function renderTeam(view) {
+            teamView = view;
+            teamContent.classList.remove('d-none');
+            idPrompt.classList.add('d-none');
+            document.getElementById('teamBuilder').classList.add('d-none');
+            exitSubMode();
+            closeModal();
+            pendingOuts = [];
+            activeOut = null;
+            document.getElementById('transferBanner').classList.add('d-none');
+
+            const h = view.header || {};
+            document.getElementById('teamName').textContent = h.name || 'Your team';
+            document.getElementById('managerName').textContent = h.manager || '';
+
+            const gwNav = document.getElementById('gwNav');
+            if (view.built) {
+                document.getElementById('gwLabel').textContent = 'Draft XI';
+                gwNav.classList.add('d-none');
+            } else {
+                gwNav.classList.remove('d-none');
+                selectedEvent = view.gw ? view.gw.event : (selectedEvent || view.current_event);
+                document.getElementById('gwLabel').textContent = selectedEvent ? `GW${selectedEvent}` : 'GW\u2013';
+                const cur = view.current_event, minE = view.min_event || 1;
+                document.getElementById('gwPrev').disabled = !selectedEvent || selectedEvent <= minE;
+                document.getElementById('gwNext').disabled = !selectedEvent || !cur || selectedEvent >= cur;
+            }
+
+            const unavailable = document.getElementById('teamUnavailable');
+            const teamBody = document.getElementById('teamBody');
+
+            renderLeagues(view.leagues || {});
+
+            if (!view.available) {
+                renderStatChips(null);
+                const built = getBuilt();
+                if (built && built.length === 15) {
+                    unavailable.classList.add('d-none');
+                    ensurePlayers().then(() => showBuiltTeam(built, view.leagues));
+                    return;
+                }
+                unavailable.innerHTML = `<div class="mb-2">${view.detail || 'Team not available.'}</div>
+                    <button id="startBuild" class="btn btn-sm btn-primary">Build a team</button>`;
+                unavailable.classList.remove('d-none');
+                teamBody.classList.add('d-none');
+                document.getElementById('editDraftBtn').classList.add('d-none');
+                document.getElementById('startBuild').addEventListener('click', openBuilder);
+                return;
+            }
+            unavailable.classList.add('d-none');
+            teamBody.classList.remove('d-none');
+            document.getElementById('editDraftBtn').classList.toggle('d-none', !view.built);
+
+            renderStatChips(view.gw);
+            teamView._gw0 = view.gw ? { ...view.gw } : null;   // snapshot for reset
+
+            workingSquad = view.squad.map(p => ({ ...p }));
+            const cap = view.squad.find(p => p.is_captain);
+            const vice = view.squad.find(p => p.is_vice_captain);
+            captainId = cap ? cap.id : null;
+            viceId = vice ? vice.id : null;
+            document.getElementById('resetBtn').classList.add('d-none');
+
+            document.getElementById('optCaptainBtn').disabled = !(view.recommended && view.recommended.captain != null);
+            teamView.transfer_recs = (view.transfer_recs || []).slice();
+            teamView._recs0 = (view.transfer_recs || []).slice();
+            renderPitch();
+            renderTransfers(teamView.transfer_recs);
+            updatePredicted();
+
+            ensurePlayers().then(() => playerSearch.refresh());
+        }
+
+        function renderStatChips(gw) {
+            const el = document.getElementById('statChips');
+            const h = teamView.header || {};
+            if (teamView.built && gw) {
+                el.innerHTML = chip('Squad value', '\u00a3' + h.value + 'm')
+                             + chip('In the bank', '\u00a3' + gw.bank + 'm')
+                             + chip('Predicted', gw.predicted_points, true);
+                return;
+            }
+            if (!gw) {
+                el.innerHTML = chip('Total pts', h.total_points ?? '\u2013')
+                             + chip('Squad value', h.value != null ? '\u00a3' + h.value + 'm' : '\u2013')
+                             + chip('In the bank', h.bank != null ? '\u00a3' + h.bank + 'm' : '\u2013');
+                return;
+            }
+            const tc = gw.transfers_cost ? ` (-${gw.transfers_cost})` : '';
+            el.innerHTML =
+                  chip('GW points', gw.points ?? '\u2013')
+                + chip('Predicted', gw.predicted_points ?? '\u2013', true)
+                + chip('In the bank', '\u00a3' + gw.bank + 'm')
+                + chip('Transfers', (gw.transfers_made ?? 0) + tc)
+                + chip('Free transfers*', gw.free_transfers_est)
+                + chip('Chips left*', (gw.chips_available || []).join(', ') || 'none')
+                + (gw.active_chip ? chip('Active chip', gw.active_chip) : '');
+        }
+        function chip(label, value, accent) {
+            return `<div class="stat-chip${accent ? ' accent' : ''}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
+        }
+
+        // ---- Pitch ----
+        function miniFixtures(p) {
+            return (p.next_gameweeks || []).slice(0, 3).map(g => {
+                const color = g.difficulty != null ? colorFor(g.difficulty, 1, 5) : '#eee';
                 const ha = g.was_home === true ? 'H' : (g.was_home === false ? 'A' : '');
-                const opp = g.opponent ?? '';
-                return `<span class="gw-cell" style="background-color:${color}" title="GW${g.event}: ${opp} (${ha})">${pts}<small>${opp} ${ha}</small></span>`;
+                const pts = g.points != null ? Number(g.points).toFixed(1) : '-';
+                return `<span class="mini-gw" style="background:${color}" title="GW${g.event}">`
+                    + `<b>${g.opponent || ''}${ha ? ' ' + ha : ''}</b>${pts}</span>`;
             }).join('');
         }
 
-        function renderPlayers(results) {
-            playersResultsBody.innerHTML = '';
-            results.forEach(p => {
-                const row = document.createElement('tr');
-                const name = p.web_name ?? `${p.first_name ?? ''} ${p.second_name ?? ''}`.trim();
-                row.innerHTML = `
-                    <td>${shirtImg(p.team_code, p.position, 'shirt')}<span class="player-name">${name}</span></td>
-                    <td>${p.position ?? ''}</td>
-                    <td><span class="rating-badge">${p.rating ?? '-'}</span></td>
-                    <td>${gwCells(p.next_gameweeks)}</td>`;
-                playersResultsBody.appendChild(row);
-            });
+        function playerCard(p, opts) {
+            opts = opts || {};
+            let badge = '';
+            if (p.id === captainId) badge = '<span class="cap-badge">C</span>';
+            else if (p.id === viceId) badge = '<span class="cap-badge vice">V</span>';
+            const injured = (p.status && p.status !== 'a')
+                ? `<span class="injury-dot" title="${(p.news || '').replace(/"/g, '')}"></span>` : '';
+            const posLabel = opts.bench ? `<div class="bench-pos">${p.pos}</div>` : '';
+            let cls = 'player';
+            if (opts.subActive) {
+                if (opts.source) cls += ' sub-source';
+                else cls += opts.eligible ? ' sub-eligible' : ' sub-ineligible';
+            }
+            if (opts.pendingOut) cls += ' pending-out' + (opts.activeOut ? ' pending-active' : '');
+            const plus = opts.pendingOut ? '<div class="out-plus">+</div>' : '';
+            return `<div class="${cls}" data-id="${p.id}">
+                ${posLabel}
+                <div class="player-kit">${shirtImg(p.team_code, p.pos, 'kit')}${badge}${injured}${plus}</div>
+                <div class="player-name-pill">${p.web_name}</div>
+                <div class="player-gws">${miniFixtures(p)}</div>
+            </div>`;
         }
 
-        function loadPlayers() {
-            const query = searchInput.value.trim();
-            if (query) {
-                fetch(`/api/search?q=${encodeURIComponent(query)}`)
-                    .then(res => res.json())
-                    .then(data => renderPlayers(data.results));
+        function renderPitch() {
+            const pitch = document.getElementById('pitch');
+            const benchEl = document.getElementById('bench');
+            const subActive = subSource != null;
+            const starters = workingSquad.filter(p => p.starting);
+            const bench = workingSquad.filter(p => !p.starting).sort((a, b) => a.position - b.position);
+            const cardOpts = (p, onBench) => ({
+                bench: onBench, subActive,
+                source: p.id === subSource,
+                eligible: subActive ? subEligible.has(p.id) : false,
+                pendingOut: pendingOuts.some(o => o.id === p.id),
+                activeOut: p.id === activeOut
+            });
+
+            pitch.innerHTML = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+                const line = starters.filter(p => p.pos === pos).sort((a, b) => a.position - b.position);
+                if (!line.length) return '';
+                return `<div class="pitch-row">${line.map(p => playerCard(p, cardOpts(p, false))).join('')}</div>`;
+            }).join('');
+
+            benchEl.innerHTML = `<div class="bench-label">Bench</div>
+                <div class="bench-row">${bench.map(p => playerCard(p, cardOpts(p, true))).join('')}</div>`;
+
+            [pitch, benchEl].forEach(container =>
+                container.querySelectorAll('.player[data-id]').forEach(el =>
+                    el.addEventListener('click', () => onPlayerClick(+el.dataset.id))));
+        }
+
+        // ---- Player click / substitution ----
+        function onPlayerClick(id) {
+            if (subSource != null) {
+                if (id === subSource || !subEligible.has(id)) return;   // only legal targets
+                const src = subSource; exitSubMode(); attemptSub(src, id); return;
+            }
+            if (pendingOuts.some(o => o.id === id)) { setActiveOut(id); return; }
+            const p = workingSquad.find(x => x.id === id);
+            if (p) openPlayerModal(p, true);
+        }
+
+        function isLegalXI(squad) {
+            const s = squad.filter(p => p.starting);
+            if (s.length !== 11) return false;
+            const c = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+            s.forEach(p => c[p.pos]++);
+            return c.GK === 1 && c.DEF >= 3 && c.DEF <= 5 && c.MID >= 2 && c.MID <= 5 && c.FWD >= 1 && c.FWD <= 3;
+        }
+        function normalizePositions(squad) {
+            const order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+            squad.filter(p => p.starting)
+                 .sort((a, b) => (order[a.pos] - order[b.pos]) || (b.predicted - a.predicted))
+                 .forEach((p, i) => p.position = i + 1);
+            const bench = squad.filter(p => !p.starting);
+            const gk = bench.filter(p => p.pos === 'GK');
+            const rest = bench.filter(p => p.pos !== 'GK').sort((a, b) => a.position - b.position);
+            [...gk, ...rest].forEach((p, i) => p.position = 12 + i);
+        }
+        function attemptSub(aId, bId) {
+            const a = workingSquad.find(p => p.id === aId), b = workingSquad.find(p => p.id === bId);
+            if (!a || !b || a === b) return;
+            if (a.starting === b.starting) {
+                const t = a.position; a.position = b.position; b.position = t;
             } else {
-                fetch(`/api/ratings?position=${encodeURIComponent(positionSelect.value)}&top_n=20`)
-                    .then(res => res.json())
-                    .then(data => renderPlayers(data.results));
+                a.starting = !a.starting; b.starting = !b.starting;
+                if (!isLegalXI(workingSquad)) {
+                    a.starting = !a.starting; b.starting = !b.starting;
+                    alert('That swap would break the formation (need exactly 1 GK, and at least 3 DEF, 2 MID, 1 FWD).');
+                    return;
+                }
+            }
+            normalizePositions(workingSquad);
+            showResetBtn();
+            renderPitch();
+            updatePredicted();
+        }
+        // Which players can legally swap with `srcId`: only the opposite group
+        // (starter <-> bench) and only if the resulting XI stays legal.
+        function computeSubEligible(srcId) {
+            const src = workingSquad.find(p => p.id === srcId);
+            const set = new Set();
+            if (!src) return set;
+            workingSquad.forEach(t => {
+                if (t.id === srcId || t.starting === src.starting) return;
+                src.starting = !src.starting; t.starting = !t.starting;
+                if (isLegalXI(workingSquad)) set.add(t.id);
+                src.starting = !src.starting; t.starting = !t.starting;
+            });
+            return set;
+        }
+        function startSub(id) {
+            closeModal();
+            subEligible = computeSubEligible(id);
+            if (!subEligible.size) { alert('No legal swaps available for that player.'); return; }
+            subSource = id;
+            const p = workingSquad.find(x => x.id === id);
+            const banner = document.getElementById('subBanner');
+            banner.innerHTML = `Swapping <strong>${p ? p.web_name : ''}</strong> &mdash; tap a highlighted player to swap. `
+                + `<button id="subCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel</button>`;
+            banner.classList.remove('d-none');
+            document.getElementById('subCancel').onclick = exitSubMode;
+            document.getElementById('teamBody').classList.add('sub-mode');
+            renderPitch();
+        }
+        function exitSubMode() {
+            subSource = null;
+            subEligible = new Set();
+            document.getElementById('subBanner').classList.add('d-none');
+            document.getElementById('teamBody').classList.remove('sub-mode');
+            if (workingSquad) renderPitch();
+        }
+
+        // ---- Player modal ----
+        function closeModal() { document.getElementById('playerModal').classList.add('d-none'); }
+        document.getElementById('pmClose').addEventListener('click', closeModal);
+        document.getElementById('pmBackdrop').addEventListener('click', closeModal);
+
+        function openPlayerModal(p, owned) {
+            document.getElementById('pmKit').innerHTML = shirtImg(p.team_code, p.pos, 'shirt');
+            document.getElementById('pmName').textContent = p.web_name;
+            document.getElementById('pmSub').textContent =
+                `${p.pos}${p.team_name ? ' \u00b7 ' + p.team_name : ''}`
+                + `${p.cost != null ? ' \u00b7 \u00a3' + p.cost.toFixed(1) + 'm' : ''}`
+                + `${p.rating != null ? ' \u00b7 rating ' + Math.round(p.rating) : ''}`;
+
+            const actions = document.getElementById('pmActions');
+            if (owned) {
+                actions.innerHTML =
+                    `<button class="btn btn-sm btn-primary" id="pmCap">Make captain</button>
+                     <button class="btn btn-sm btn-outline-primary" id="pmVice">Make vice</button>
+                     <button class="btn btn-sm btn-outline-primary" id="pmSubBtn">Substitute</button>
+                     <button class="btn btn-sm btn-outline-primary" id="pmTransferBtn">Transfer out</button>`;
+                document.getElementById('pmCap').onclick = () => { captainId = p.id; if (viceId === p.id) viceId = null; showResetBtn(); renderPitch(); updatePredicted(); closeModal(); };
+                document.getElementById('pmVice').onclick = () => { viceId = p.id; if (captainId === p.id) captainId = null; renderPitch(); closeModal(); };
+                document.getElementById('pmSubBtn').onclick = () => startSub(p.id);
+                document.getElementById('pmTransferBtn').onclick = () => markTransferOut(p);
+            } else {
+                actions.innerHTML = '';
+            }
+            const tbox = document.getElementById('pmTransfer');
+            tbox.classList.add('d-none'); tbox.innerHTML = '';
+
+            renderUpcoming(p);
+            renderForm(p);
+            document.getElementById('playerModal').classList.remove('d-none');
+        }
+
+        function renderUpcoming(p) {
+            const el = document.getElementById('pmUpcoming');
+            const gws = p.next_gameweeks || [];
+            if (!gws.length) { el.innerHTML = '<span class="text-muted small">No upcoming fixtures.</span>'; return; }
+            el.innerHTML = gws.slice(0, 3).map(g => {
+                const color = g.difficulty != null ? colorFor(g.difficulty, 1, 5) : '#eee';
+                const ha = g.was_home === true ? 'H' : (g.was_home === false ? 'A' : '');
+                const pts = g.points != null ? Number(g.points).toFixed(1) : '-';
+                return `<span class="pm-fix" style="background:${color}"><b>${g.opponent || ''} ${ha}</b><span>${pts} pts</span></span>`;
+            }).join('');
+        }
+
+        function renderForm(p) {
+            const el = document.getElementById('pmForm');
+            el.innerHTML = '<span class="text-muted small">Loading\u2026</span>';
+            fetch(`/api/player/${p.id}`).then(r => r.json()).then(d => {
+                if (!d.available) { el.innerHTML = '<span class="text-muted small">No data available.</span>'; return; }
+                let html = '';
+                if (d.history && d.history.length) {
+                    html += `<table class="table table-sm pm-form-table mb-1"><tbody>${d.history.map(hh => `
+                        <tr><td>GW${hh.event}</td><td>${hh.opponent || ''} ${hh.was_home ? 'H' : 'A'}</td>
+                        <td>${hh.minutes}'</td><td class="pm-pts">${hh.points}</td></tr>`).join('')}</tbody></table>`;
+                } else {
+                    html += '<span class="text-muted small">No games this season yet.</span>';
+                }
+                el.innerHTML = html;
+            }).catch(() => { el.innerHTML = '<span class="text-muted small">Couldn\u2019t load form.</span>'; });
+        }
+
+        // ---- Manual transfers (preview only) — mark players out, then replace ----
+        function updateTransferBanner() {
+            const banner = document.getElementById('transferBanner');
+            if (!pendingOuts.length) { banner.classList.add('d-none'); return; }
+            const out = pendingOuts.find(o => o.id === activeOut) || pendingOuts[0];
+            const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
+            const more = pendingOuts.length - 1;
+            banner.innerHTML = `Replacing <strong>${out.web_name}</strong> `
+                + `(\u00a3${(bank + out.cost).toFixed(1)}m to spend)`
+                + (more > 0 ? ` &mdash; ${more} more marked, tap a greyed player to switch. ` : `. `)
+                + `<button id="transferCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel all</button>`;
+            banner.classList.remove('d-none');
+            document.getElementById('transferCancel').onclick = cancelTransfers;
+        }
+        function markTransferOut(p) {
+            closeModal();
+            if (!pendingOuts.some(o => o.id === p.id)) pendingOuts.push(p);
+            activeOut = p.id;
+            renderPitch();            // grey the player out straight away
+            updateTransferBanner();
+            ensurePlayers().then(() => playerSearch.refresh());
+        }
+        function setActiveOut(id) {
+            activeOut = id;
+            updateTransferBanner();
+            playerSearch.refresh();
+            renderPitch();
+        }
+        function cancelTransfers() {
+            pendingOuts = [];
+            activeOut = null;
+            document.getElementById('transferBanner').classList.add('d-none');
+            playerSearch.refresh();
+            renderPitch();
+        }
+        function resolveTransfer(inp) {
+            const out = pendingOuts.find(o => o.id === activeOut);
+            if (!out) return;
+            performTransfer(out.id, inp);
+            pendingOuts = pendingOuts.filter(o => o.id !== out.id);
+            activeOut = pendingOuts.length ? pendingOuts[0].id : null;
+            updateTransferBanner();
+            playerSearch.refresh();
+            renderPitch();
+        }
+
+        function activeOutPlayer() { return pendingOuts.find(o => o.id === activeOut) || null; }
+
+        // Predicted GW points, with the captain counting double. Recomputed
+        // client-side so captaincy / lineup / transfer changes stay in sync.
+        function computePredicted() {
+            if (!workingSquad) return null;
+            return +workingSquad.filter(p => p.starting)
+                .reduce((s, p) => s + (p.predicted || 0) * (p.id === captainId ? 2 : 1), 0).toFixed(1);
+        }
+        function updatePredicted() {
+            if (teamView && teamView.gw) {
+                teamView.gw.predicted_points = computePredicted();
+                renderStatChips(teamView.gw);
             }
         }
 
-        searchInput.addEventListener('input', () => {
-            // Search spans all positions, so a lingering position filter is
-            // misleading (e.g. "Goalkeeper" selected while searching a forward).
-            if (searchInput.value.trim() !== '') positionSelect.value = 'All';
-            clearTimeout(searchDebounce);
-            searchDebounce = setTimeout(loadPlayers, 250);
-        });
-        positionSelect.addEventListener('change', loadPlayers);
+        function performTransfer(outId, inp) {
+            const idx = workingSquad.findIndex(p => p.id === outId);
+            if (idx < 0) return;
+            const old = workingSquad[idx];
+            if (teamView.gw) teamView.gw.bank = +((teamView.gw.bank || 0) - (inp.cost - old.cost)).toFixed(1);
+            workingSquad[idx] = { ...inp, position: old.position, starting: old.starting,
+                is_captain: old.is_captain, is_vice_captain: old.is_vice_captain,
+                multiplier: old.multiplier, status: 'a', news: '' };
+            if (teamView.header) teamView.header.value = +workingSquad.reduce((s, p) => s + (p.cost || 0), 0).toFixed(1);
+            if (captainId === old.id) captainId = inp.id;
+            if (viceId === old.id) viceId = inp.id;
+            if (teamView.transfer_recs) {
+                teamView.transfer_recs = teamView.transfer_recs.filter(
+                    r => workingSquad.some(p => p.id === r.out.id));
+                renderTransfers(teamView.transfer_recs);
+            }
+            showResetBtn();
+            closeModal();
+            updatePredicted();
+            renderPitch();
+            playerSearch.refresh();
+        }
 
-        // ---- Fixture Rotator ----
+        // ---- Optimise / reset ----
+        document.getElementById('optCaptainBtn').addEventListener('click', () => {
+            const r = teamView && teamView.recommended;
+            if (!r) return;
+            if (r.captain != null) captainId = r.captain;
+            if (r.vice != null) viceId = r.vice;
+            showResetBtn();
+            renderPitch();
+            updatePredicted();
+        });
+
+        document.getElementById('optimiseBtn').addEventListener('click', () => {
+            const opt = teamView.optimised;
+            if (!opt) return;
+            const orderMap = {};
+            opt.starting.forEach((id, i) => orderMap[id] = { starting: true, position: i + 1 });
+            opt.bench.forEach((id, i) => orderMap[id] = { starting: false, position: 12 + i });
+            workingSquad.forEach(p => { const o = orderMap[p.id]; if (o) { p.starting = o.starting; p.position = o.position; } });
+            showResetBtn();
+            renderPitch();
+            updatePredicted();
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            workingSquad = teamView.squad.map(p => ({ ...p }));
+            const cap = teamView.squad.find(p => p.is_captain);
+            const vice = teamView.squad.find(p => p.is_vice_captain);
+            captainId = cap ? cap.id : null;
+            viceId = vice ? vice.id : null;
+            pendingOuts = []; activeOut = null;
+            document.getElementById('transferBanner').classList.add('d-none');
+            if (teamView.header) teamView.header.value = +workingSquad.reduce((s, p) => s + (p.cost || 0), 0).toFixed(1);
+            if (teamView._gw0) { teamView.gw = { ...teamView._gw0 }; }
+            teamView.transfer_recs = (teamView._recs0 || []).slice();
+            document.getElementById('resetBtn').classList.add('d-none');
+            renderTransfers(teamView.transfer_recs);
+            renderPitch();
+            updatePredicted();
+            playerSearch.refresh();
+        });
+
+        // ---- Save team (persist the current squad + lineup locally) ----
+        document.getElementById('saveTeamBtn').addEventListener('click', () => {
+            if (!workingSquad || workingSquad.length !== 15) return;
+            const snap = workingSquad.map(p => ({
+                ...p, is_captain: p.id === captainId, is_vice_captain: p.id === viceId
+            }));
+            localStorage.setItem(BUILT_KEY, JSON.stringify(snap.map(p => ({
+                id: p.id, web_name: p.web_name, pos: p.pos, team: p.team, team_code: p.team_code,
+                cost: p.cost, rating: p.rating, predicted: p.predicted, form: p.form,
+                team_name: p.team_name, next_gameweeks: p.next_gameweeks,
+                starting: p.starting, position: p.position,
+                is_captain: p.is_captain, is_vice_captain: p.is_vice_captain
+            }))));
+            // The saved state becomes the new "actual" that Reset reverts to.
+            teamView.squad = snap.map(p => ({ ...p }));
+            if (teamView.gw) teamView._gw0 = { ...teamView.gw };
+            teamView._recs0 = (teamView.transfer_recs || []).slice();
+            document.getElementById('resetBtn').classList.add('d-none');
+            const btn = document.getElementById('saveTeamBtn');
+            const label = btn.textContent;
+            btn.textContent = 'Saved \u2713'; btn.disabled = true;
+            setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+        });
+
+        // ---- Recommended transfers ----
+        function renderTransfers(recs) {
+            const el = document.getElementById('transferRecs');
+            if (!recs.length) { el.innerHTML = '<p class="text-muted small">No upgrades found within budget.</p>'; return; }
+            el.innerHTML = recs.map((r, i) => {
+                const tag = r.free ? '<span class="ft-tag free">free</span>' : '<span class="ft-tag hit">-4 hit</span>';
+                const cost = r.cost_change === 0 ? '\u00b10.0' : (r.cost_change > 0 ? '+' : '') + r.cost_change.toFixed(1);
+                return `<div class="transfer-rec">
+                    <div class="transfer-line">
+                        <span class="tr-out">${shirtImg(r.out.team_code, r.out.pos, 'shirt-sm')}${r.out.web_name}</span>
+                        <span class="tr-arrow">&rarr;</span>
+                        <span class="tr-in">${shirtImg(r.in.team_code, r.in.pos, 'shirt-sm')}${r.in.web_name}</span>
+                    </div>
+                    <div class="transfer-meta">
+                        ${tag}<span>rating +${r.rating_gain}</span><span>\u00a3${cost}m</span>
+                    </div>
+                    <button class="btn btn-sm btn-primary make-tr w-100 mt-1" data-i="${i}">Make transfer</button>
+                </div>`;
+            }).join('');
+            el.querySelectorAll('.make-tr').forEach(btn =>
+                btn.addEventListener('click', () => performTransfer(recs[btn.dataset.i].out.id, recs[btn.dataset.i].in)));
+        }
+
+        // ---- Gameweek navigation ----
+        document.getElementById('gwPrev').addEventListener('click', () => {
+            if (selectedEvent > (teamView.min_event || 1)) { selectedEvent--; loadTeam(); }
+        });
+        document.getElementById('gwNext').addEventListener('click', () => {
+            if (selectedEvent < teamView.current_event) { selectedEvent++; loadTeam(); }
+        });
+
+        // ---- Leagues (accordion: opening one closes the others) ----
+        function renderLeagues(groups) {
+            const el = document.getElementById('leaguesList');
+            groups = groups || {};
+            const order = [['personal', 'Personal'], ['general', 'General'], ['broadcaster', 'Broadcaster']];
+            let html = '';
+            order.forEach(([key, label]) => {
+                const list = groups[key] || [];
+                if (!list.length) return;
+                html += `<div class="league-group-label">${label}</div>`;
+                html += list.map(l => `
+                    <div class="league-row" data-id="${l.id}">
+                        <span class="league-name">${l.name}</span>
+                        <span class="league-rank">${l.rank != null ? 'Rank ' + l.rank.toLocaleString() : ''}</span>
+                        <span class="league-caret">&#9662;</span>
+                        <div class="league-standings d-none"></div>
+                    </div>`).join('');
+            });
+            el.innerHTML = html || '<p class="text-muted small">No leagues found.</p>';
+            el.querySelectorAll('.league-row').forEach(row => {
+                row.querySelector('.league-name').addEventListener('click', () => toggleLeague(row));
+                row.querySelector('.league-caret').addEventListener('click', () => toggleLeague(row));
+            });
+        }
+        function toggleLeague(row) {
+            const box = row.querySelector('.league-standings');
+            const isOpen = !box.classList.contains('d-none');
+            document.querySelectorAll('.league-standings').forEach(b => { if (b !== box) b.classList.add('d-none'); });
+            if (isOpen) { box.classList.add('d-none'); return; }
+            if (box.dataset.loaded) { box.classList.remove('d-none'); return; }
+            box.innerHTML = '<div class="text-muted small p-2">Loading\u2026</div>';
+            box.classList.remove('d-none');
+            fetch(`/api/league/${row.dataset.id}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.available) { box.innerHTML = '<div class="text-muted small p-2">Unavailable.</div>'; return; }
+                    box.dataset.loaded = '1';
+                    box.innerHTML = `<table class="table table-sm league-table mb-0"><tbody>${
+                        data.standings.map(s => `<tr>
+                            <td class="ls-rank">${s.rank}</td>
+                            <td>${s.entry_name}<div class="ls-manager">${s.manager}</div></td>
+                            <td class="ls-total">${s.total}</td>
+                        </tr>`).join('')}</tbody></table>`;
+                });
+        }
+
+        // =====================================================================
+        //  PLAYER POOL — builder, picker, shared filters
+        // =====================================================================
+        const BUILT_KEY = 'fpl_built_squad';
+        const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
+        const BUDGET = 100.0;
+        const CLUB_LIMIT = 3;
+        let allPlayers = null;
+        let builderPicked = [];
+
+        function getBuilt() { try { return JSON.parse(localStorage.getItem(BUILT_KEY)); } catch (e) { return null; } }
+        function ensurePlayers() {
+            if (allPlayers) return Promise.resolve(allPlayers);
+            return fetch('/api/all_players').then(r => r.json()).then(d => { allPlayers = d.players || []; return allPlayers; });
+        }
+        function populateTeamSelect(sel) {
+            if (!allPlayers || sel.dataset.filled) return;
+            const names = [...new Set(allPlayers.map(p => p.team_name).filter(Boolean))].sort();
+            sel.insertAdjacentHTML('beforeend', names.map(n => `<option>${n}</option>`).join(''));
+            sel.dataset.filled = '1';
+        }
+        function priceBounds(which) {
+            const mn = parseFloat(document.getElementById(which + 'PriceMin').value);
+            const mx = parseFloat(document.getElementById(which + 'PriceMax').value);
+            return [Math.min(mn, mx), Math.max(mn, mx)];
+        }
+        function setupPriceRange(which, onChange) {
+            const min = document.getElementById(which + 'PriceMin');
+            const max = document.getElementById(which + 'PriceMax');
+            const label = document.getElementById(which + 'PriceLabel');
+            const fill = document.getElementById(which + 'PriceFill');
+            const lo0 = parseFloat(min.min), hi0 = parseFloat(min.max);
+            const upd = (fire) => {
+                let lo = parseFloat(min.value), hi = parseFloat(max.value);
+                if (lo > hi) {   // stop the two handles crossing
+                    if (document.activeElement === min) { hi = lo; max.value = hi; }
+                    else { lo = hi; min.value = lo; }
+                }
+                label.textContent = `\u00a3${lo.toFixed(1)}m \u2013 \u00a3${hi.toFixed(1)}m`;
+                if (fill) {
+                    fill.style.left = ((lo - lo0) / (hi0 - lo0) * 100) + '%';
+                    fill.style.right = (100 - (hi - lo0) / (hi0 - lo0) * 100) + '%';
+                }
+                if (fire !== false) onChange();
+            };
+            min.addEventListener('input', () => upd(true));
+            max.addEventListener('input', () => upd(true));
+            upd(false);
+        }
+        function filterPlayers(list, q, pos, team, priceMin, priceMax) {
+            return list.filter(p =>
+                (pos === 'All' || p.pos === pos) &&
+                (team === 'All' || p.team_name === team) &&
+                p.cost >= priceMin && p.cost <= priceMax &&
+                (!q || p.web_name.toLowerCase().includes(q)));
+        }
+        function playerCells(p) {
+            return `${shirtImg(p.team_code, p.pos, 'shirt-sm')}
+                <span class="br-name">${p.web_name}</span>
+                <span class="br-pos">${p.pos}</span>
+                <span class="br-team">${p.team_name || ''}</span>
+                <span class="br-rating">${Math.round(p.rating)}</span>
+                <span class="br-cost">\u00a3${p.cost.toFixed(1)}</span>`;
+        }
+
+        // ---- Reusable player search (sortable table + filters) ----
+        function createPlayerSearch(cfg) {
+            const c = cfg.container;
+            const pfx = cfg.sliderPrefix || 'ps';
+            c.innerHTML = `
+                <div class="ps-controls">
+                    <div class="search-clear-wrap ps-search">
+                        <input class="form-control form-control-sm ps-q" placeholder="Search player...">
+                        <button class="search-clear" type="button">&times;</button>
+                    </div>
+                    <select class="form-select form-select-sm ps-pos">
+                        <option value="All">All positions</option>
+                        <option>GK</option><option>DEF</option><option>MID</option><option>FWD</option>
+                    </select>
+                    <select class="form-select form-select-sm ps-team"><option value="All">All teams</option></select>
+                    <button class="btn btn-sm btn-outline-primary ps-reset">Reset</button>
+                    <div class="price-range ps-price">
+                        <div class="price-label">Price: <span id="${pfx}PriceLabel"></span></div>
+                        <div class="range-wrap">
+                            <div class="range-fill" id="${pfx}PriceFill"></div>
+                            <input type="range" id="${pfx}PriceMin" min="3.5" max="17" step="0.5" value="3.5">
+                            <input type="range" id="${pfx}PriceMax" min="3.5" max="17" step="0.5" value="17">
+                        </div>
+                    </div>
+                </div>
+                <div class="ps-rec"></div>
+                <div class="ps-list"></div>`;
+            const qEl = c.querySelector('.ps-q');
+            const posEl = c.querySelector('.ps-pos');
+            const teamEl = c.querySelector('.ps-team');
+            const listEl = c.querySelector('.ps-list');
+            const recEl = c.querySelector('.ps-rec');
+            const state = { sortKey: 'rating', sortDir: 'desc', teamsFilled: false };
+
+            const COLS = [
+                { key: 'web_name', label: 'Player', noSort: true },
+                { key: 'pos', label: 'Pos', noSort: true },
+                { key: 'team_name', label: 'Team', noSort: true },
+                { key: 'form', label: 'Form', num: true },
+                { key: 'rating', label: 'Rtg', num: true },
+                { key: 'cost', label: '\u00a3m', num: true },
+                { key: 'fixtures', label: 'Next 3', noSort: true }
+            ];
+
+            function pool() { return cfg.pool() || []; }
+            function ensureTeams() {
+                if (state.teamsFilled) return;
+                const names = [...new Set(pool().map(p => p.team_name).filter(Boolean))].sort();
+                if (!names.length) return;
+                teamEl.insertAdjacentHTML('beforeend', names.map(n => `<option>${n}</option>`).join(''));
+                state.teamsFilled = true;
+            }
+            function bounds() {
+                const mn = parseFloat(document.getElementById(pfx + 'PriceMin').value);
+                const mx = parseFloat(document.getElementById(pfx + 'PriceMax').value);
+                return [Math.min(mn, mx), Math.max(mn, mx)];
+            }
+            function sortRows(rows) {
+                const k = state.sortKey, dir = state.sortDir === 'asc' ? 1 : -1;
+                const num = (COLS.find(x => x.key === k) || {}).num;
+                return rows.slice().sort((a, b) => {
+                    if (num) { const va = a[k] == null ? -Infinity : a[k], vb = b[k] == null ? -Infinity : b[k]; return (va - vb) * dir; }
+                    const va = (a[k] || '').toString().toLowerCase(), vb = (b[k] || '').toString().toLowerCase();
+                    return va < vb ? -dir : va > vb ? dir : 0;
+                });
+            }
+            function rowHtml(p) {
+                const form = p.form != null ? p.form.toFixed(1) : '\u2013';
+                return `<tr class="ps-row" data-id="${p.id}">
+                    <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span></td>
+                    <td>${p.pos}</td>
+                    <td>${p.team_name || ''}</td>
+                    <td>${form}</td>
+                    <td><span class="rating-badge">${Math.round(p.rating)}</span></td>
+                    <td>${p.cost.toFixed(1)}</td>
+                    <td><div class="player-gws">${miniFixtures(p)}</div></td>
+                </tr>`;
+            }
+            function headHtml() {
+                const arrow = c => c.noSort ? '' : (state.sortKey === c.key ? (state.sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : ' <span class="ps-arrow">\u21C5</span>');
+                const ths = COLS.map(col => `<th class="${col.noSort ? '' : 'ps-sortable'}" data-key="${col.key}">${col.label}${arrow(col)}</th>`).join('');
+                return `<thead><tr>${ths}</tr></thead>`;
+            }
+            function render() {
+                ensureTeams();
+                const transfer = cfg.isTransferMode();
+                const [lo, hi] = bounds();
+                const qq = qEl.value.trim().toLowerCase();
+                let rows = pool().filter(p =>
+                    (posEl.value === 'All' || p.pos === posEl.value) &&
+                    (teamEl.value === 'All' || p.team_name === teamEl.value) &&
+                    p.cost >= lo && p.cost <= hi &&
+                    (!qq || p.web_name.toLowerCase().includes(qq)));
+                if (transfer) rows = rows.filter(cfg.transferCandidate);
+                rows = sortRows(rows).slice(0, 80);
+
+                if (transfer) {
+                    const rec = pool().filter(cfg.transferCandidate).sort((a, b) => b.rating - a.rating).slice(0, 3);
+                    recEl.innerHTML = rec.length
+                        ? `<div class="ps-rec-label">Recommended \u2014 tap to transfer in</div>
+                           <table class="table table-sm ps-table mb-2">${headHtml()}<tbody>${rec.map(rowHtml).join('')}</tbody></table>`
+                        : '';
+                } else { recEl.innerHTML = ''; }
+
+                listEl.innerHTML = rows.length
+                    ? `<table class="table table-sm ps-table mb-0 ${transfer ? 'ps-transfer' : ''}">${headHtml()}<tbody>${rows.map(rowHtml).join('')}</tbody></table>`
+                    : '<p class="text-muted small p-2">No players match.</p>';
+
+                c.querySelectorAll('.ps-sortable').forEach(th => th.addEventListener('click', () => {
+                    const k = th.dataset.key;
+                    if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+                    else { state.sortKey = k; state.sortDir = 'desc'; }
+                    render();
+                }));
+                // Whole row is clickable: transfer the player in, or open their card.
+                c.querySelectorAll('.ps-row').forEach(r => r.addEventListener('click', () => {
+                    const p = pool().find(x => x.id === +r.dataset.id);
+                    if (!p) return;
+                    if (transfer) cfg.onTransfer(p); else cfg.onBrowse(p);
+                }));
+            }
+
+            qEl.addEventListener('input', render);
+            posEl.addEventListener('change', render);
+            teamEl.addEventListener('change', render);
+            wireClear(qEl, c.querySelector('.ps-search .search-clear'), render);
+            setupPriceRange(pfx, render);
+            c.querySelector('.ps-reset').addEventListener('click', () => {
+                qEl.value = ''; posEl.value = 'All'; teamEl.value = 'All';
+                c.querySelector('.ps-search .search-clear').style.display = 'none';
+                const mn = document.getElementById(pfx + 'PriceMin'), mx = document.getElementById(pfx + 'PriceMax');
+                mn.value = 3.5; mx.value = 17; mn.dispatchEvent(new Event('input'));
+            });
+            return { refresh: render };
+        }
+
+        const playerSearch = createPlayerSearch({
+            container: document.getElementById('playerSearch'),
+            sliderPrefix: 'ps',
+            pool: () => allPlayers || [],
+            isTransferMode: () => activeOut != null,
+            transferCandidate: (p) => {
+                const out = activeOutPlayer();
+                if (!out) return true;
+                const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
+                const ownedIds = new Set(workingSquad.map(x => x.id));
+                return p.pos === out.pos && !ownedIds.has(p.id)
+                    && p.cost <= bank + out.cost
+                    && workingSquad.filter(x => x.team === p.team && x.id !== out.id).length < 3;
+            },
+            onTransfer: (p) => resolveTransfer(p),
+            onBrowse: (p) => {
+                const owned = workingSquad && workingSquad.find(x => x.id === p.id);
+                openPlayerModal(owned || p, !!owned);
+            }
+        });
+
+        // Same search table powers the Players tab (browse only).
+        const playersTabSearch = createPlayerSearch({
+            container: document.getElementById('playersTabSearch'),
+            sliderPrefix: 'pt',
+            pool: () => allPlayers || [],
+            isTransferMode: () => false,
+            transferCandidate: () => true,
+            onTransfer: () => {},
+            onBrowse: (p) => {
+                const owned = workingSquad && workingSquad.find(x => x.id === p.id);
+                openPlayerModal(owned || p, !!owned);
+            }
+        });
+
+        // ---- Team builder ----
+        function openBuilder() {
+            document.getElementById('teamUnavailable').classList.add('d-none');
+            document.getElementById('teamBody').classList.add('d-none');
+            document.getElementById('teamBuilder').classList.remove('d-none');
+            ensurePlayers().then(() => {
+                populateTeamSelect(document.getElementById('builderTeam'));
+                builderPicked = (getBuilt() || []).map(p => ({ ...p }));
+                document.getElementById('builderSearch').value = '';
+                document.getElementById('builderSearchClear').style.display = 'none';
+                document.getElementById('builderPos').value = 'All';
+                document.getElementById('builderTeam').value = 'All';
+                document.getElementById('builderPriceMin').value = 3.5;
+                document.getElementById('builderPriceMax').value = 17;
+                document.getElementById('builderPriceMin').dispatchEvent(new Event('input'));
+                renderBuilder();
+            });
+        }
+        function builderCounts() { const c = { GK: 0, DEF: 0, MID: 0, FWD: 0 }; builderPicked.forEach(p => c[p.pos]++); return c; }
+        function builderSpent() { return builderPicked.reduce((s, p) => s + p.cost, 0); }
+        function clubCount(teamId) { return builderPicked.filter(p => p.team === teamId).length; }
+
+        function renderBuilder() {
+            const counts = builderCounts();
+            const remaining = +(BUDGET - builderSpent()).toFixed(1);
+            const valid = builderPicked.length === 15
+                && Object.keys(SQUAD_REQ).every(k => counts[k] === SQUAD_REQ[k]) && remaining >= 0;
+            document.getElementById('builderBudget').textContent = `\u00a3${remaining.toFixed(1)}m left`;
+            document.getElementById('builderCount').textContent = `${builderPicked.length}/15 picked`;
+            document.getElementById('builderSave').disabled = !valid;
+
+            const squadEl = document.getElementById('builderSquad');
+            squadEl.innerHTML = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+                const inPos = builderPicked.filter(p => p.pos === pos);
+                const slots = inPos.map(p => `
+                    <div class="builder-slot">
+                        ${shirtImg(p.team_code, p.pos, 'shirt-sm')}
+                        <span class="bs-name">${p.web_name}</span>
+                        <span class="bs-cost">\u00a3${p.cost.toFixed(1)}</span>
+                        <button class="bs-remove" data-id="${p.id}">&times;</button>
+                    </div>`).join('');
+                const empty = Math.max(0, SQUAD_REQ[pos] - inPos.length);
+                const placeholders = Array(empty).fill('<div class="builder-slot empty">empty</div>').join('');
+                return `<div class="builder-pos-group">
+                    <div class="builder-pos-label">${pos} ${inPos.length}/${SQUAD_REQ[pos]}</div>
+                    ${slots}${placeholders}</div>`;
+            }).join('');
+            squadEl.querySelectorAll('.bs-remove').forEach(btn =>
+                btn.addEventListener('click', () => {
+                    builderPicked = builderPicked.filter(p => p.id !== +btn.dataset.id);
+                    renderBuilder();
+                }));
+            renderBuilderList();
+        }
+
+        function renderBuilderList() {
+            if (!allPlayers) return;
+            const q = document.getElementById('builderSearch').value.trim().toLowerCase();
+            const counts = builderCounts();
+            const remaining = +(BUDGET - builderSpent()).toFixed(1);
+            const pickedIds = new Set(builderPicked.map(p => p.id));
+            const bpr = priceBounds('builder');
+            let list = filterPlayers(allPlayers, q,
+                document.getElementById('builderPos').value,
+                document.getElementById('builderTeam').value,
+                bpr[0], bpr[1]).filter(p => !pickedIds.has(p.id));
+            list.sort((a, b) => b.rating - a.rating);
+            list = list.slice(0, 80);
+
+            const el = document.getElementById('builderList');
+            el.innerHTML = list.map(p => {
+                const full = counts[p.pos] >= SQUAD_REQ[p.pos];
+                const tooPricey = p.cost > remaining;
+                const clubFull = clubCount(p.team) >= CLUB_LIMIT;
+                const disabled = full || tooPricey || clubFull || builderPicked.length >= 15;
+                const why = full ? `${p.pos} full` : clubFull ? '3/club' : tooPricey ? 'too pricey' : 'add';
+                return `<div class="builder-row">${playerCells(p)}
+                    <button class="btn btn-sm btn-primary br-add" data-id="${p.id}" ${disabled ? 'disabled' : ''}>${why}</button>
+                </div>`;
+            }).join('') || '<p class="text-muted small p-2">No players match.</p>';
+            el.querySelectorAll('.br-add').forEach(btn =>
+                btn.addEventListener('click', () => {
+                    const p = allPlayers.find(x => x.id === +btn.dataset.id);
+                    if (p) { builderPicked.push({ ...p }); renderBuilder(); }
+                }));
+        }
+
+        document.getElementById('builderSearch').addEventListener('input', renderBuilderList);
+        document.getElementById('builderPos').addEventListener('change', renderBuilderList);
+        document.getElementById('builderTeam').addEventListener('change', renderBuilderList);
+        setupPriceRange('builder', renderBuilderList);
+        wireClear(document.getElementById('builderSearch'), document.getElementById('builderSearchClear'), renderBuilderList);
+        document.getElementById('builderReset').addEventListener('click', () => {
+            document.getElementById('builderSearch').value = '';
+            document.getElementById('builderSearchClear').style.display = 'none';
+            document.getElementById('builderPos').value = 'All';
+            document.getElementById('builderTeam').value = 'All';
+            document.getElementById('builderPriceMin').value = 3.5;
+            document.getElementById('builderPriceMax').value = 17;
+            document.getElementById('builderPriceMin').dispatchEvent(new Event('input'));
+        });
+        document.getElementById('builderClear').addEventListener('click', () => { builderPicked = []; renderBuilder(); });
+        document.getElementById('builderCancel').addEventListener('click', () => {
+            document.getElementById('teamBuilder').classList.add('d-none');
+            loadTeam();
+        });
+        document.getElementById('builderSave').addEventListener('click', () => {
+            localStorage.setItem(BUILT_KEY, JSON.stringify(builderPicked));
+            document.getElementById('teamBuilder').classList.add('d-none');
+            showBuiltTeam(builderPicked, teamView ? teamView.leagues : {});
+        });
+        document.getElementById('editDraftBtn').addEventListener('click', openBuilder);
+
+        // ---- Client-side optimise / transfers for a built team ----
+        function optimiseSquad(squad) {
+            const gks = squad.filter(p => p.pos === 'GK').sort((a, b) => b.predicted - a.predicted);
+            const outs = { DEF: [], MID: [], FWD: [] };
+            squad.filter(p => p.pos !== 'GK').forEach(p => { if (outs[p.pos]) outs[p.pos].push(p); });
+            Object.values(outs).forEach(a => a.sort((x, y) => y.predicted - x.predicted));
+            if (gks.length < 2 || (outs.DEF.length + outs.MID.length + outs.FWD.length) < 10) return null;
+            const startGk = gks[0], benchGk = gks[1];
+            const MIN = { DEF: 3, MID: 2, FWD: 1 }, MAX = { DEF: 5, MID: 5, FWD: 3 };
+            let starters = [], counts = { DEF: 0, MID: 0, FWD: 0 };
+            ['DEF', 'MID', 'FWD'].forEach(pos => { starters = starters.concat(outs[pos].slice(0, MIN[pos])); counts[pos] = MIN[pos]; });
+            let pool = [];
+            ['DEF', 'MID', 'FWD'].forEach(pos => { pool = pool.concat(outs[pos].slice(MIN[pos])); });
+            pool.sort((a, b) => b.predicted - a.predicted);
+            for (const p of pool) { if (starters.length >= 10) break; if (counts[p.pos] < MAX[p.pos]) { starters.push(p); counts[p.pos]++; } }
+            const starterIds = new Set(starters.map(p => p.id)); starterIds.add(startGk.id);
+            const benchOut = squad.filter(p => !starterIds.has(p.id) && p.pos !== 'GK').sort((a, b) => b.predicted - a.predicted);
+            const order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+            const starting = [startGk].concat(starters).sort((a, b) => (order[a.pos] - order[b.pos]) || (b.predicted - a.predicted));
+            return { starting: starting.map(p => p.id), bench: [benchGk.id].concat(benchOut.map(p => p.id)) };
+        }
+        function computeTransfers(squad, pool, bank, freeTransfers, maxRecs) {
+            maxRecs = maxRecs || 3;
+            const owned = new Set(squad.map(p => p.id));
+            const byPos = {};
+            pool.forEach(p => { (byPos[p.pos] = byPos[p.pos] || []).push(p); });
+            Object.values(byPos).forEach(a => a.sort((x, y) => y.rating - x.rating));
+            let budget = bank, recs = [];
+            const weak = [...squad].sort((a, b) => a.rating - b.rating);
+            for (const w of weak) {
+                if (recs.length >= maxRecs) break;
+                const afford = w.cost + budget;
+                for (const c of (byPos[w.pos] || [])) {
+                    if (owned.has(c.id)) continue;
+                    if (c.rating <= w.rating) break;
+                    if (c.cost <= afford) {
+                        recs.push({ out: w, in: c, rating_gain: +(c.rating - w.rating).toFixed(1),
+                                    cost_change: +(c.cost - w.cost).toFixed(1), free: recs.length < freeTransfers });
+                        owned.add(c.id); budget -= (c.cost - w.cost); break;
+                    }
+                }
+            }
+            return recs;
+        }
+        function showBuiltTeam(picked, leagues) {
+            const byId = new Map((allPlayers || []).map(p => [p.id, p]));
+            const squad = picked.map(p => {
+                const fresh = byId.get(p.id) || {};
+                return { ...p, ...fresh, is_captain: false, is_vice_captain: false, multiplier: 1 };
+            });
+
+            // Keep a saved lineup if present and legal; otherwise auto-optimise.
+            let useSaved = picked.some(p => 'starting' in p) && picked.filter(p => p.starting).length === 11;
+            if (useSaved) {
+                picked.forEach(sp => { const p = squad.find(x => x.id === sp.id); if (p) { p.starting = !!sp.starting; p.position = sp.position; } });
+                useSaved = isLegalXI(squad);
+            }
+            if (!useSaved) {
+                const opt = optimiseSquad(squad);
+                if (opt) {
+                    const map = {};
+                    opt.starting.forEach((id, i) => map[id] = { starting: true, position: i + 1 });
+                    opt.bench.forEach((id, i) => map[id] = { starting: false, position: 12 + i });
+                    squad.forEach(p => { const o = map[p.id]; if (o) { p.starting = o.starting; p.position = o.position; } });
+                } else {
+                    squad.forEach((p, i) => { p.starting = i < 11; p.position = i + 1; });
+                }
+            }
+
+            const savedCap = picked.find(p => p.is_captain);
+            const savedVice = picked.find(p => p.is_vice_captain);
+            const ranked = [...squad].sort((a, b) => b.predicted - a.predicted);
+            const capId = savedCap ? savedCap.id : (ranked[0] ? ranked[0].id : null);
+            const vId = savedVice ? savedVice.id : (ranked[1] ? ranked[1].id : null);
+            if (capId) { const cc = squad.find(p => p.id === capId); if (cc) cc.is_captain = true; }
+            if (vId) { const vv = squad.find(p => p.id === vId); if (vv) vv.is_vice_captain = true; }
+
+            const spent = +squad.reduce((s, p) => s + p.cost, 0).toFixed(1);
+            const bank = +(BUDGET - spent).toFixed(1);
+            const predGw = +squad.filter(p => p.starting).reduce((s, p) => s + p.predicted * (p.is_captain ? 2 : 1), 0).toFixed(1);
+            renderTeam({
+                available: true, built: true,
+                header: { name: 'Draft XI', manager: 'Built locally', value: spent, bank: bank },
+                gw: { event: null, points: null, predicted_points: predGw, bank: bank, value: spent },
+                squad: squad,
+                recommended: { captain: capId, vice: vId },
+                optimised: optimiseSquad(squad),
+                transfer_recs: computeTransfers(squad, allPlayers, bank, 15),
+                leagues: leagues || {}, current_event: null, min_event: 1
+            });
+        }
+
+        // ---- Info-icon tooltip ----
+        document.querySelectorAll('.info-icon').forEach(el => {
+            const tip = document.createElement('div');
+            tip.className = 'info-tip';
+            tip.textContent = el.dataset.tip;
+            el.appendChild(tip);
+        });
+
+        // =====================================================================
+        //  FIXTURE ROTATOR
+        // =====================================================================
         const rotationHeader = document.getElementById('rotationHeader');
         const rotationBody = document.getElementById('rotationBody');
         const pairsContainer = document.getElementById('pairsContainer');
@@ -193,7 +1331,6 @@
             </span>`;
         }
 
-        // One grid row per position: LABEL  player_a  +  player_b
         function recPlayersHtml(positionPairs) {
             if (!positionPairs || !positionPairs.length) return '';
             const rows = positionPairs.map(pp => `
@@ -220,7 +1357,6 @@
                 rotationHeader.appendChild(th);
             });
 
-            // Selected teams pinned to top, in their original relative order otherwise
             const sortedTeams = [...data.teams].sort((a, b) => {
                 const aSel = selectedTeams.has(a.team_name);
                 const bSel = selectedTeams.has(b.team_name);
@@ -234,16 +1370,11 @@
                 const tr = document.createElement('tr');
                 if (selectedTeams.has(team.team_name)) tr.classList.add('selected-team');
                 let rowHtml = `<td class="team-col">${shirtImg(team.team_code, null, 'shirt-sm')} ${team.team_name}</td>`;
-                gameweeks.forEach(gw => {
-                    rowHtml += fixtureCell(team.fixtures[gw], min, max);
-                });
+                gameweeks.forEach(gw => { rowHtml += fixtureCell(team.fixtures[gw], min, max); });
                 tr.innerHTML = rowHtml;
                 tr.querySelector('.team-col').addEventListener('click', () => {
-                    if (selectedTeams.has(team.team_name)) {
-                        selectedTeams.delete(team.team_name);
-                    } else {
-                        selectedTeams.add(team.team_name);
-                    }
+                    if (selectedTeams.has(team.team_name)) selectedTeams.delete(team.team_name);
+                    else selectedTeams.add(team.team_name);
                     renderRotationTable();
                 });
                 rotationBody.appendChild(tr);
@@ -261,7 +1392,6 @@
                     const max = Math.max(...values);
 
                     pairsContainer.innerHTML = '';
-
                     const buildPairCard = (pair) => {
                         const card = document.createElement('div');
                         card.className = 'pair-card';
@@ -278,9 +1408,7 @@
                     };
 
                     const INITIAL_PAIRS = 2;
-                    data.pairs.slice(0, INITIAL_PAIRS).forEach(pair => {
-                        pairsContainer.appendChild(buildPairCard(pair));
-                    });
+                    data.pairs.slice(0, INITIAL_PAIRS).forEach(pair => pairsContainer.appendChild(buildPairCard(pair)));
 
                     const remaining = data.pairs.slice(INITIAL_PAIRS);
                     if (remaining.length) {
@@ -288,26 +1416,13 @@
                         toggleBtn.className = 'btn btn-outline-primary btn-sm';
                         let expanded = false;
                         let extraCards = [];
-
-                        const renderToggle = () => {
-                            toggleBtn.textContent = expanded ? 'Show less' : `Show all (${data.pairs.length})`;
-                        };
-
+                        const renderToggle = () => { toggleBtn.textContent = expanded ? 'Show less' : `Show all (${data.pairs.length})`; };
                         toggleBtn.addEventListener('click', () => {
-                            if (expanded) {
-                                extraCards.forEach(c => c.remove());
-                                extraCards = [];
-                            } else {
-                                extraCards = remaining.map(pair => {
-                                    const card = buildPairCard(pair);
-                                    pairsContainer.insertBefore(card, toggleBtn);
-                                    return card;
-                                });
-                            }
+                            if (expanded) { extraCards.forEach(c => c.remove()); extraCards = []; }
+                            else { extraCards = remaining.map(pair => { const card = buildPairCard(pair); pairsContainer.insertBefore(card, toggleBtn); return card; }); }
                             expanded = !expanded;
                             renderToggle();
                         });
-
                         renderToggle();
                         pairsContainer.appendChild(toggleBtn);
                     }
@@ -325,15 +1440,11 @@
             });
         });
 
-        // ---- Mode toggle (button, not dropdown) ----
+        // ---- Mode toggle ----
         const modeToggle = document.getElementById('modeToggle');
         let currentMode = "{{ mode }}";
-
-        function renderModeToggle() {
-            modeToggle.textContent = currentMode === 'preseason' ? 'Preseason' : 'In-season';
-        }
+        function renderModeToggle() { modeToggle.textContent = currentMode === 'preseason' ? 'Preseason' : 'In-season'; }
         renderModeToggle();
-
         modeToggle.addEventListener('click', () => {
             const newMode = currentMode === 'preseason' ? 'inseason' : 'preseason';
             modeToggle.disabled = true;
@@ -341,19 +1452,19 @@
                 .then(res => res.json())
                 .then(result => {
                     modeToggle.disabled = false;
-                    if (result.status === 'error') {
-                        alert(`Couldn't switch mode: ${result.detail}`);
-                        return;
-                    }
+                    if (result.status === 'error') { alert(`Couldn't switch mode: ${result.detail}`); return; }
                     currentMode = newMode;
                     renderModeToggle();
-                    loadPlayers();
+                    allPlayers = null;
+                    ensurePlayers().then(() => { playerSearch.refresh(); playersTabSearch.refresh(); });
                     loadRotation();
+                    loadTeam();
                 });
         });
 
         // ---- Initial load ----
-        loadPlayers();
+        if (getSavedId()) loadTeam(); else showPrompt();
+        ensurePlayers().then(() => playersTabSearch.refresh());
         loadRotation();
     </script>
 

@@ -15,6 +15,7 @@ from pipeline import run_pipeline
 from rating_model import get_rated_position_dfs
 from fixture_rotator import (get_rotation_data, rank_rotation_pairs, recommend_pair_players, team_fixture_map)
 from search import search_player
+from team_service import get_team_view, get_league_standings, get_all_players, get_player_summary
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -134,6 +135,31 @@ def rotation(category: str = "defender", n_gameweeks: int = 8, exclude_top_n: in
         })
 
     return {"gameweeks": gameweeks, "teams": teams, "pairs": pairs}
+
+
+@app.get("/api/team")
+def team(team_id: int, event: int = None):
+    """Full Team-tab payload for a manager id (optionally a specific gameweek).
+    Read-only: recommendations are returned, but nothing is written back to FPL."""
+    return get_team_view(team_id, event, state["position_dfs"])
+
+
+@app.get("/api/league/{league_id}")
+def league(league_id: int, page: int = 1):
+    """Top of a classic league's standings table."""
+    return get_league_standings(league_id, page)
+
+
+@app.get("/api/all_players")
+def all_players():
+    """Full rated pool for the preseason team builder."""
+    return get_all_players(state["position_dfs"])
+
+
+@app.get("/api/player/{player_id}")
+def player(player_id: int):
+    """Recent gameweek performance for a single player (player pop-up)."""
+    return get_player_summary(player_id)
 
 
 @app.post("/api/mode")

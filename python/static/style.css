@@ -166,3 +166,617 @@ table th { color: var(--accent-dark); }
     .rec-cost { font-size: 0.66rem; }
     .rec-empty { font-size: 0.76rem; }
 }
+
+/* ============================================================
+   MY TEAM
+   ============================================================ */
+
+/* First-run FPL ID prompt */
+.id-prompt {
+    max-width: 520px;
+    margin: 1rem auto;
+    padding: 24px;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.id-prompt .d-flex { justify-content: center; }
+
+/* Info icon + hover/focus tooltip */
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-style: italic;
+    cursor: help;
+    position: relative;
+}
+.info-tip {
+    display: none;
+    position: absolute;
+    top: 130%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    background: #222;
+    color: #fff;
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    z-index: 20;
+}
+.info-icon:hover .info-tip, .info-icon:focus .info-tip { display: block; }
+
+/* Header */
+.team-header { border-bottom: 1px solid #eee; padding-bottom: 12px; }
+.team-name { color: var(--accent-dark); font-weight: 700; }
+.gw-nav { display: inline-flex; align-items: center; gap: 6px; }
+.gw-label { font-weight: 600; min-width: 52px; text-align: center; }
+
+.stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.stat-chip {
+    display: flex; flex-direction: column;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: #f5f3fc;
+    min-width: 78px;
+}
+.stat-chip.accent { background: var(--accent); }
+.stat-chip.accent .stat-label, .stat-chip.accent .stat-value { color: #fff; }
+.stat-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em; color: #888; }
+.stat-value { font-size: 0.95rem; font-weight: 700; color: #222; }
+
+/* Actions row above pitch */
+.pitch-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rec-captain { font-size: 0.82rem; color: #555; }
+
+/* Pitch — save the attached graphic as static/pitch.svg to use it;
+   otherwise the solid-green fallback shows. */
+.pitch {
+    background: #1f8a4c url('/static/pitch.svg') center/cover no-repeat;
+    border-radius: 10px;
+    padding: 18px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.pitch-row { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
+
+.player { width: 76px; text-align: center; }
+.player-kit { position: relative; display: inline-block; }
+.kit { height: 44px; width: auto; }
+.cap-badge {
+    position: absolute; top: -4px; right: 2px;
+    width: 17px; height: 17px;
+    background: #1a1a1a; color: #fff;
+    border-radius: 50%;
+    font-size: 0.62rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #fff;
+}
+.cap-badge.vice { background: #6c757d; }
+.injury-dot {
+    position: absolute; bottom: 0; left: 4px;
+    width: 11px; height: 11px;
+    background: #e90052; border: 1px solid #fff; border-radius: 50%;
+}
+.player-name-pill {
+    background: rgba(255,255,255,0.95);
+    color: #1a1a1a;
+    font-size: 0.68rem; font-weight: 600;
+    border-radius: 3px;
+    padding: 1px 3px;
+    margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.player-stat {
+    background: var(--accent-dark);
+    color: #fff;
+    font-size: 0.62rem; font-weight: 600;
+    border-radius: 0 0 3px 3px;
+    padding: 1px 3px;
+}
+
+/* Bench */
+.bench {
+    margin-top: 10px;
+    border: 1px dashed #ddd;
+    border-radius: 10px;
+    padding: 8px;
+    background: #fafafa;
+}
+.bench-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; color: #999; margin-bottom: 4px; }
+.bench-row { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
+
+/* Transfer recommendations */
+.transfer-rec { border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.transfer-line { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 500; }
+.tr-out, .tr-in { display: inline-flex; align-items: center; gap: 4px; }
+.tr-arrow { color: var(--accent); font-weight: 700; }
+.transfer-meta { display: flex; align-items: center; gap: 10px; font-size: 0.72rem; color: #777; margin-top: 4px; }
+.ft-tag { border-radius: 4px; padding: 0 6px; font-weight: 600; color: #fff; }
+.ft-tag.free { background: #2e9b57; }
+.ft-tag.hit { background: #e07a1f; }
+
+.news-feed-placeholder { border-top: 1px dashed #e6e6e6; padding-top: 10px; }
+
+/* Leagues */
+.league-row {
+    border: 1px solid #eee; border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 6px;
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 10px; align-items: center;
+}
+.league-name { font-weight: 600; cursor: pointer; }
+.league-rank { font-size: 0.8rem; color: #777; }
+.league-caret { cursor: pointer; color: var(--accent); }
+.league-standings { grid-column: 1 / -1; }
+.league-table td { font-size: 0.8rem; vertical-align: middle; }
+.ls-rank { width: 36px; font-weight: 700; color: var(--accent-dark); }
+.ls-manager { font-size: 0.68rem; color: #999; }
+.ls-total { text-align: right; font-weight: 600; }
+
+/* Mobile scaling for the team view */
+@media (max-width: 575.98px) {
+    .player { width: 62px; }
+    .kit { height: 36px; }
+    .player-name-pill { font-size: 0.6rem; }
+    .player-stat { font-size: 0.56rem; }
+    .stat-chip { min-width: 64px; padding: 5px 9px; }
+    .stat-value { font-size: 0.85rem; }
+    .pitch { padding: 12px 4px 8px; }
+    .pitch-row { gap: 2px; }
+    .info-tip { width: 200px; }
+}
+
+/* ============================================================
+   MY TEAM — v2 tweaks (gw nav, builder, grouped leagues)
+   ============================================================ */
+
+/* Gameweek nav: purple arrows, no box */
+.gw-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+.gw-btn:hover:not(:disabled) { color: var(--accent-dark); }
+.gw-btn:disabled { color: #ccc; cursor: default; }
+
+/* Drop the up/down spinner on the FPL ID field */
+#idInput::-webkit-outer-spin-button,
+#idInput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#idInput { -moz-appearance: textfield; appearance: textfield; }
+
+/* Grouped-league subheadings */
+.league-group-label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+    color: #999; font-weight: 700; margin: 12px 0 4px;
+}
+.league-group-label:first-child { margin-top: 0; }
+
+/* Team builder */
+.builder-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 12px; background: #f5f3fc; border-radius: 10px;
+}
+.builder-stat { font-weight: 700; color: var(--accent-dark); }
+.builder-pos-group { margin-bottom: 10px; }
+.builder-pos-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: #888; font-weight: 700; margin-bottom: 4px;
+}
+.builder-slot {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid #eee; border-radius: 6px;
+    padding: 4px 8px; margin-bottom: 4px; font-size: 0.85rem;
+}
+.builder-slot.empty { color: #bbb; font-style: italic; justify-content: center; border-style: dashed; }
+.bs-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-cost { color: #666; font-size: 0.78rem; }
+.bs-remove { border: none; background: none; color: #e90052; font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 2px; }
+
+.builder-list { max-height: 460px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; }
+.builder-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; border-bottom: 1px solid #f2f2f2; font-size: 0.85rem;
+}
+.builder-row:last-child { border-bottom: none; }
+.br-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.br-pos { color: #999; font-size: 0.72rem; width: 32px; }
+.br-rating { background: var(--accent); color: #fff; border-radius: 4px; padding: 0 5px; font-size: 0.72rem; font-weight: 600; }
+.br-cost { color: #666; font-size: 0.78rem; width: 46px; text-align: right; }
+.br-add { min-width: 66px; }
+.br-add:disabled { opacity: 0.6; }
+
+/* Mobile: keep tooltip on-screen, shrink gw nav */
+@media (max-width: 575.98px) {
+    .info-tip {
+        position: fixed;
+        left: 50%; right: auto; top: auto; bottom: 20px;
+        transform: translateX(-50%);
+        width: 90vw; max-width: 320px;
+    }
+    .gw-btn { font-size: 0.85rem; padding: 1px 4px; }
+    .gw-label { min-width: 40px; font-size: 0.85rem; }
+    #changeId { font-size: 0.72rem; padding: 2px 8px; }
+    .builder-list { max-height: 320px; }
+}
+
+/* ============================================================
+   MY TEAM — v3 (layout, player modal, subs, filters)
+   ============================================================ */
+
+/* Thinner, centered pitch */
+.pitch-wrap { max-width: 520px; margin: 0 auto; }
+
+/* Clickable players + next-3 fixtures under each card */
+.player { cursor: pointer; }
+.player-gws { display: flex; gap: 2px; justify-content: center; margin-top: 3px; }
+.mini-gw {
+    font-size: 0.6rem; font-weight: 600; color: #1a1a1a;
+    min-width: 15px; text-align: center; border-radius: 3px; padding: 0 2px; line-height: 1.4;
+}
+
+/* Substitution banner */
+.sub-banner {
+    background: #fff3cd; border: 1px solid #ffe69c; color: #664d03;
+    border-radius: 8px; padding: 8px 12px; font-size: 0.85rem; margin-bottom: 10px;
+}
+.sub-mode .player { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 8px; }
+
+/* Search clear (x) button */
+.search-clear-wrap { position: relative; display: inline-block; }
+.search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: #999; font-size: 1.1rem; line-height: 1;
+    cursor: pointer; padding: 0 2px; display: none;
+}
+.search-clear:hover { color: #555; }
+.search-clear-wrap input { padding-right: 24px; }
+
+/* Find-players picker */
+.picker-filters .form-select-sm { flex: 0 0 auto; }
+.picker-row { cursor: pointer; }
+.picker-row:hover { background: #f5f3fc; }
+.br-team { color: #999; font-size: 0.72rem; width: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Player modal */
+.player-modal { position: fixed; inset: 0; z-index: 1050; display: flex; align-items: center; justify-content: center; }
+.pm-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
+.pm-card {
+    position: relative; background: #fff; border-radius: 14px; padding: 18px;
+    width: 92%; max-width: 420px; max-height: 86vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+}
+.pm-close { position: absolute; top: 10px; right: 12px; border: none; background: none; font-size: 1.5rem; line-height: 1; color: #888; cursor: pointer; }
+.pm-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.pm-name { font-weight: 700; font-size: 1.1rem; }
+.pm-sub { color: #777; font-size: 0.8rem; }
+.pm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.pm-section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #999; font-weight: 700; margin: 12px 0 6px; }
+.pm-fixtures { display: flex; gap: 6px; }
+.pm-fix { flex: 1; border-radius: 6px; padding: 6px 4px; text-align: center; font-size: 0.72rem; display: flex; flex-direction: column; gap: 2px; }
+.pm-fix span { font-weight: 700; }
+.pm-form-table td { padding: 3px 6px; font-size: 0.8rem; }
+.pm-pts { font-weight: 700; text-align: right; }
+.pm-past { font-size: 0.78rem; color: #666; margin-top: 4px; }
+.pm-transfer { border: 1px solid #eee; border-radius: 8px; padding: 8px; margin-bottom: 8px; max-height: 260px; overflow-y: auto; }
+.pm-transfer-title { font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.pm-cand { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid #f2f2f2; font-size: 0.85rem; cursor: pointer; border-radius: 6px; }
+.pm-cand:last-child { border-bottom: none; }
+.pm-cand:hover { background: #f5f3fc; }
+
+@media (max-width: 575.98px) {
+    .pitch-wrap { max-width: 100%; }
+    .mini-gw { min-width: 13px; font-size: 0.55rem; }
+    .picker-filters .form-select-sm, .picker-filters .search-clear-wrap { flex: 1 1 auto; }
+}
+
+/* ============================================================
+   MY TEAM — v4 (two-col, sub states, dual slider, richer rows)
+   ============================================================ */
+
+/* Fixture cells under predicted points: opponent above the pts */
+.mini-gw {
+    display: inline-flex; flex-direction: column; align-items: center;
+    line-height: 1.1; min-width: 20px; padding: 1px 3px;
+}
+.mini-gw b { font-size: 0.5rem; font-weight: 700; letter-spacing: -0.2px; }
+
+/* Bench: position label above the kit */
+.bench-pos { font-size: 0.6rem; font-weight: 700; color: #888; text-transform: uppercase; margin-bottom: 1px; text-align: center; }
+
+/* Substitution highlighting */
+.sub-mode .player { outline: none; }
+.player.sub-ineligible { opacity: 0.3; pointer-events: none; }
+.player.sub-eligible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.player.sub-source { outline: 2px dashed #e90052; outline-offset: 2px; border-radius: 8px; }
+
+/* Dual price slider */
+.price-range { margin-top: 2px; }
+.price-label { font-size: 0.75rem; color: #555; margin-bottom: 2px; }
+.range-wrap { position: relative; height: 26px; }
+.range-wrap input[type=range] {
+    position: absolute; left: 0; top: 6px; width: 100%; height: 0; margin: 0;
+    -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none;
+}
+.range-wrap::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 10px; height: 4px;
+    background: #ddd; border-radius: 2px;
+}
+.range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; pointer-events: auto; height: 16px; width: 16px;
+    border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.range-wrap input[type=range]::-moz-range-thumb {
+    pointer-events: auto; height: 16px; width: 16px; border: 2px solid #fff;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+}
+
+/* Reset-filters button sizing */
+#pickerReset, #builderReset { flex: 0 0 auto; }
+
+/* Richer Find-players rows */
+.picker-row { border-bottom: 1px solid #f2f2f2; cursor: pointer; padding: 6px 8px; }
+.picker-row:last-child { border-bottom: none; }
+.picker-row:hover { background: #f5f3fc; }
+.pr-top { display: flex; align-items: center; gap: 8px; }
+.pr-gws { justify-content: flex-start; margin-top: 4px; }
+.br-form { color: #666; font-size: 0.72rem; width: 46px; white-space: nowrap; }
+
+@media (max-width: 575.98px) {
+    .pitch-wrap { max-width: 100%; }
+}
+
+/* ============================================================
+   MY TEAM — v5 (reusable search table, aligned slider, polish)
+   ============================================================ */
+
+/* --- Dual price slider: aligned track + purple fill --- */
+.range-wrap { position: relative; height: 24px; }
+.range-wrap::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 10px;
+    height: 4px; background: #ddd; border-radius: 2px;
+}
+.range-fill { position: absolute; top: 10px; height: 4px; background: var(--accent); border-radius: 2px; }
+.range-wrap input[type=range] {
+    position: absolute; left: 0; top: 0; width: 100%; height: 24px; margin: 0;
+    background: transparent; -webkit-appearance: none; appearance: none; pointer-events: none;
+}
+.range-wrap input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 24px; border: none; }
+.range-wrap input[type=range]::-moz-range-track { background: transparent; height: 24px; border: none; }
+.range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; pointer-events: auto; height: 16px; width: 16px; margin-top: 4px;
+    border-radius: 50%; background: var(--accent); border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+}
+.range-wrap input[type=range]::-moz-range-thumb {
+    pointer-events: auto; height: 16px; width: 16px; border: 2px solid #fff;
+    border-radius: 50%; background: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+}
+.price-label { font-size: 0.72rem; color: #666; margin-bottom: 2px; }
+
+/* --- Reusable player search --- */
+.ps-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ps-controls .ps-search { flex: 1 1 150px; min-width: 130px; }
+.ps-controls .ps-pos, .ps-controls .ps-team { flex: 0 0 auto; max-width: 130px; }
+.ps-controls .ps-price { flex: 1 1 170px; min-width: 150px; }
+.ps-list { max-height: 480px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; }
+.ps-table { font-size: 0.8rem; margin: 0; }
+.ps-table thead th {
+    position: sticky; top: 0; background: #faf9fe; z-index: 1;
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.02em; color: #777;
+    border-bottom: 2px solid #eee; white-space: nowrap; padding: 6px;
+}
+.ps-sortable { cursor: pointer; user-select: none; }
+.ps-sortable:hover { color: var(--accent-dark); }
+.ps-arrow { color: #c3c3c3; }
+.ps-table td { vertical-align: middle; padding: 5px 6px; }
+.ps-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; }
+.ps-table .player-gws { justify-content: flex-start; }
+.ps-row:hover { background: #f5f3fc; cursor: pointer; }
+.ps-rec-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-dark); font-weight: 700; margin: 2px 0 4px; }
+.ps-rec .ps-table { border: 1px solid #ece7fb; border-radius: 8px; }
+.ps-act { white-space: nowrap; padding: 2px 8px; font-size: 0.72rem; }
+
+/* --- Card polish: fixtures under the name --- */
+.player-name-pill { font-weight: 600; }
+.player-stat { font-size: 0.72rem; color: #555; }
+.player-gws { display: flex; gap: 3px; justify-content: center; margin-top: 3px; }
+.mini-gw { min-width: 22px; padding: 2px 3px; border-radius: 4px; }
+.mini-gw b { font-size: 0.52rem; }
+
+.section-heading { font-weight: 700; color: var(--accent-dark); }
+
+/* ============================================================
+   MY TEAM — v6 (inline 3-col, aligned search table)
+   ============================================================ */
+
+/* Fixed layout so header + body + recommended table all align */
+.ps-table { table-layout: fixed; width: 100%; }
+.ps-table th, .ps-table td {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+}
+.ps-table th:nth-child(2), .ps-table td:nth-child(2) { width: 34px; }   /* Pos */
+.ps-table th:nth-child(3), .ps-table td:nth-child(3) { width: 46px; }   /* Team */
+.ps-table th:nth-child(4), .ps-table td:nth-child(4) { width: 42px; }   /* Form */
+.ps-table th:nth-child(5), .ps-table td:nth-child(5) { width: 52px; }   /* Rating */
+.ps-table th:nth-child(6), .ps-table td:nth-child(6) { width: 40px; }   /* £m */
+.ps-table th:nth-child(7), .ps-table td:nth-child(7) { width: 96px; }   /* Next 3 */
+.ps-table th:nth-child(8), .ps-table td:nth-child(8) { width: 86px; }   /* action */
+.ps-table img.shirt-sm { height: 16px; width: 16px; object-fit: contain; vertical-align: middle; flex: 0 0 auto; }
+.ps-table .player-gws { flex-wrap: nowrap; margin-top: 0; }
+.ps-table .mini-gw { min-width: 27px; }
+.ps-name span { overflow: hidden; text-overflow: ellipsis; }
+
+/* Recommended-transfers cards fit a narrow column */
+.transfer-rec { font-size: 0.82rem; }
+.transfer-line { flex-wrap: wrap; }
+.transfer-meta { flex-wrap: wrap; gap: 4px 8px; }
+.make-tr { padding: 2px 8px; font-size: 0.72rem; }
+
+/* ============================================================
+   MY TEAM — v7 (contained cards, roomier pitch, pending-out)
+   ============================================================ */
+
+.pitch-wrap { max-width: 100%; }
+.pitch-row { display: flex; justify-content: space-evenly; gap: 4px; margin-bottom: 10px; }
+.bench-row { justify-content: space-evenly; gap: 4px; }
+
+/* Each player is a tidy little contained card */
+.player {
+    width: auto; padding: 5px 4px 6px; border-radius: 10px;
+    background: rgba(255,255,255,0.78); box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+.player-kit { position: relative; }
+.player-name-pill { font-size: 0.72rem; margin-top: 2px; }
+.player-gws { gap: 3px; margin-top: 4px; }
+.mini-gw { min-width: 24px; }
+
+/* Players marked for transfer out: greyed with a + to fill */
+.player.pending-out { opacity: 0.4; filter: grayscale(1); }
+.player.pending-out .out-plus {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; font-weight: 800; color: #e90052;
+}
+.player.pending-active { opacity: 0.85; filter: none; outline: 2px solid #e90052; outline-offset: 2px; border-radius: 10px; }
+.player.pending-active .out-plus { color: #e90052; }
+
+/* ============================================================
+   MY TEAM — v8 (transparency, taller table, mobile pitch)
+   ============================================================ */
+
+/* More transparent player cards */
+.player { background: rgba(255,255,255,0.45); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.player.pending-active { background: rgba(255,255,255,0.6); }
+
+/* Taller search table (extends down toward the news feed) */
+.ps-list { max-height: 70vh; }
+
+/* Compact recommended-transfers cards for the narrow column */
+.transfer-rec { font-size: 0.75rem; padding: 6px 8px; }
+.transfer-line { gap: 4px; flex-wrap: wrap; }
+.transfer-meta { font-size: 0.7rem; gap: 3px 6px; }
+.tr-out, .tr-in { display: inline-flex; align-items: center; gap: 2px; }
+
+/* Mobile: keep the formation on one line per row, shrink cards */
+@media (max-width: 575.98px) {
+    .pitch-row, .bench-row { flex-wrap: nowrap; gap: 3px; justify-content: space-between; }
+    .player { width: auto; min-width: 0; flex: 1 1 0; padding: 2px 1px 3px; }
+    .kit { height: 30px; }
+    .player-name-pill {
+        font-size: 0.56rem; line-height: 1.15;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .player-gws { gap: 1px; margin-top: 2px; }
+    .mini-gw { min-width: 0; flex: 1 1 0; padding: 1px 0; }
+    .mini-gw b { font-size: 0.42rem; }
+    .bench-pos { font-size: 0.5rem; }
+    .cap-badge { font-size: 0.55rem; padding: 0 3px; }
+}
+
+/* ============================================================
+   MY TEAM — v9 (table column widths, mobile card size)
+   ============================================================ */
+
+/* Percentage widths → columns line up across header, body and the
+   recommended table; Player column trimmed to free room for the rest. */
+.ps-table { table-layout: fixed; }
+.ps-table th:nth-child(1), .ps-table td:nth-child(1) { width: 25%; }   /* Player */
+.ps-table th:nth-child(2), .ps-table td:nth-child(2) { width: 9%;  }   /* Pos */
+.ps-table th:nth-child(3), .ps-table td:nth-child(3) { width: 13%; }   /* Team */
+.ps-table th:nth-child(4), .ps-table td:nth-child(4) { width: 11%; }   /* Form */
+.ps-table th:nth-child(5), .ps-table td:nth-child(5) { width: 13%; }   /* Rating */
+.ps-table th:nth-child(6), .ps-table td:nth-child(6) { width: 9%;  }   /* £m */
+.ps-table th:nth-child(7), .ps-table td:nth-child(7) { width: 20%; }   /* Next 3 */
+.ps-table th:nth-child(8), .ps-table td:nth-child(8) { width: 0; }     /* (no action col) */
+.ps-row { cursor: pointer; }
+.ps-name { gap: 4px; }
+.ps-name span { min-width: 0; }
+
+/* Mobile: compact, non-stretched player cards */
+@media (max-width: 575.98px) {
+    .pitch-row, .bench-row { justify-content: center; gap: 3px; flex-wrap: nowrap; }
+    .player { flex: 0 0 auto; width: 18.5%; max-width: 66px; min-width: 0; }
+    .mini-gw { min-width: 0; flex: 1 1 0; }
+}
+
+/* ============================================================
+   MY TEAM — v10 (name fix, widths, grey not red, mobile room)
+   ============================================================ */
+
+/* Robust name cell — always shows the name (truncated if needed) */
+.ps-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.ps-name img.shirt-sm { display: inline; vertical-align: middle; margin-right: 4px; }
+.ps-name span { display: inline; }
+
+/* Rebalanced column widths (Player gets more; data cols fit their icons) */
+.ps-table th:nth-child(1), .ps-table td:nth-child(1) { width: 30%; }
+.ps-table th:nth-child(2), .ps-table td:nth-child(2) { width: 8%;  }
+.ps-table th:nth-child(3), .ps-table td:nth-child(3) { width: 12%; }
+.ps-table th:nth-child(4), .ps-table td:nth-child(4) { width: 12%; }
+.ps-table th:nth-child(5), .ps-table td:nth-child(5) { width: 13%; }
+.ps-table th:nth-child(6), .ps-table td:nth-child(6) { width: 9%;  }
+.ps-table th:nth-child(7), .ps-table td:nth-child(7) { width: 16%; }
+.ps-table thead th { padding: 6px 4px; font-size: 0.66rem; }
+.ps-table td { padding: 5px 4px; }
+.ps-arrow { font-size: 0.85em; }
+.ps-table .rating-badge { padding: 0 4px; }
+
+/* Marked for transfer out: just greyed (with the +). Active one keeps the
+   grey but gets a subtle purple ring — no red box. */
+.player.pending-out { opacity: 0.4; filter: grayscale(1); }
+.player.pending-out .out-plus { color: #444; }
+.player.pending-active {
+    opacity: 0.45; filter: grayscale(1); background: rgba(255,255,255,0.45);
+    outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 10px;
+}
+.player.pending-active .out-plus { color: #444; }
+
+/* Mobile: reclaim side space so the whole formation + bench fit */
+@media (max-width: 575.98px) {
+    .container { padding-left: 6px; padding-right: 6px; }
+    #teamBody { --bs-gutter-x: 0.5rem; }
+    .pitch-wrap { max-width: 100%; }
+    .pitch-row, .bench-row { justify-content: space-between; gap: 2px; flex-wrap: nowrap; }
+    .player { flex: 0 0 auto; width: 19%; max-width: none; min-width: 0; }
+    .bench-row .player { width: 23%; }
+    .ps-table thead th { font-size: 0.6rem; padding: 5px 2px; }
+    .ps-table td { padding: 4px 2px; }
+}
+
+/* ============================================================
+   MY TEAM — v11 (name cell fix, mobile GK centering)
+   ============================================================ */
+
+/* v10 set display:block on the <td>, which removed it from the table
+   layout and hid the name. Keep it a real table cell that truncates. */
+.ps-name {
+    display: table-cell; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-weight: 600;
+}
+.ps-name img.shirt-sm { display: inline; vertical-align: middle; margin-right: 4px; }
+.ps-name span { display: inline; color: inherit; }
+
+/* Mobile: centre every pitch/bench row (so a lone GK is centred, not left) */
+@media (max-width: 575.98px) {
+    .pitch-row, .bench-row { justify-content: space-evenly; gap: 2px; flex-wrap: nowrap; }
+    .player { width: 18%; }
+    .bench-row .player { width: 20%; }
+}
