@@ -780,3 +780,149 @@ table th { color: var(--accent-dark); }
     .player { width: 18%; }
     .bench-row .player { width: 20%; }
 }
+
+/* ============================================================
+   MY TEAM — v12 (badge, fixtures, table scroll, info-tip, buttons)
+   ============================================================ */
+
+/* Captain/vice badge: top-right of the whole card */
+.player { position: relative; }
+.cap-badge { position: absolute; top: 2px; right: 2px; left: auto; z-index: 3; }
+
+/* Upcoming-fixture cells: opponent + H/A always on one line, pts below */
+.mini-gw { white-space: nowrap; overflow: hidden; }
+.mini-gw b { white-space: nowrap; display: block; }
+
+/* Search table: let it scroll sideways so fixtures are never cut off */
+.ps-list { overflow: auto; }
+.ps-table { min-width: 470px; }
+.ps-table td:nth-child(7) { overflow: visible; }
+.ps-table .player-gws { flex-wrap: nowrap; }
+
+/* Player pop-up buttons: smaller, wrap neatly */
+.pm-actions { gap: 5px; }
+.pm-btn { font-size: 0.75rem; padding: 3px 9px; }
+
+@media (max-width: 575.98px) {
+    /* Info tooltip: centre it on screen, not pinned to the bottom */
+    .info-tip {
+        position: fixed; left: 50%; top: 50%; right: auto; bottom: auto;
+        transform: translate(-50%, -50%);
+        width: 88vw; max-width: 320px;
+    }
+    .pm-btn { font-size: 0.7rem; padding: 3px 7px; }
+    .mini-gw b { font-size: 0.42rem; }
+}
+
+/* ============================================================
+   MY TEAM — v13 (forceful badge + tooltip, disabled rows, fixtures)
+   ============================================================ */
+
+/* Captain/vice badge pinned to the card corner (high specificity) */
+.pitch .player, .bench .player { position: relative; }
+.pitch .cap-badge, .bench .cap-badge {
+    position: absolute; top: 3px; right: 3px; left: auto; bottom: auto; z-index: 4;
+}
+
+/* Greyed, unclickable rows (e.g. 3-from-a-club already selected) */
+.ps-disabled { opacity: 0.4; cursor: not-allowed; }
+.ps-disabled:hover { background: transparent; }
+
+/* Fit all three fixtures inside the table's Next-3 column */
+.ps-table th:nth-child(1), .ps-table td:nth-child(1) { width: 28%; }
+.ps-table th:nth-child(7), .ps-table td:nth-child(7) { width: 18%; overflow: visible; }
+.ps-table td:nth-child(7) .player-gws { display: flex; flex-wrap: nowrap; gap: 1px; justify-content: flex-start; }
+.ps-table td:nth-child(7) .mini-gw { flex: 1 1 0; min-width: 0; }
+
+@media (max-width: 575.98px) {
+    /* Force the info tooltip to screen-centre, overriding earlier bottom rule */
+    .info-icon .info-tip {
+        position: fixed; left: 50%; right: auto; top: 50%; bottom: auto;
+        transform: translate(-50%, -50%); width: 88vw; max-width: 320px;
+    }
+}
+
+/* ============================================================
+   MY TEAM — v14 (chips)
+   ============================================================ */
+.chip-row {
+    display: flex; flex-direction: column; padding: 6px 10px; margin-bottom: 6px;
+    border: 1px solid #eee; border-radius: 8px; background: #faf9fe;
+}
+.chip-row.chip-hot { border-color: var(--accent); background: #f0ebfb; }
+.chip-name { font-weight: 700; font-size: 0.85rem; color: var(--accent-dark); }
+.chip-note { font-size: 0.72rem; color: #666; }
+.chip-row.chip-hot .chip-note { color: var(--accent-dark); font-weight: 600; }
+#refreshTransfersBtn { font-size: 1.1rem; line-height: 1; text-decoration: none; }
+
+/* ============================================================
+   MY TEAM — v15 (list view, chips bar)
+   ============================================================ */
+
+/* List view: drop the pitch graphic, give the table room */
+.pitch.list-mode { background: none; padding: 0; }
+.squad-list { width: 100%; font-size: 0.82rem; }
+.squad-list td, .squad-list th { padding: 6px 8px; }
+
+/* Chips strip above the pitch */
+.chips-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips-bar:empty { display: none; }
+.chip-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 12px; border-radius: 999px; cursor: pointer; user-select: none;
+    background: #f0ebfb; color: var(--accent-dark); font-size: 0.8rem; font-weight: 600;
+    border: 1px solid #e3d9f7;
+}
+.chip-pill:hover { background: #e7dffa; }
+.chip-pill.chip-hot { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ============================================================
+   MY TEAM — v16 (chip cards, debt)
+   ============================================================ */
+.chips-bar { gap: 10px; }
+.chip-card {
+    width: 96px; text-align: center; padding: 8px 6px; border-radius: 12px;
+    background: #fff; border: 1px solid #eee; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.chip-img { width: 44px; height: 44px; object-fit: contain; }
+.chip-card-name { font-size: 0.7rem; font-weight: 600; margin-top: 4px; line-height: 1.1; }
+.chip-status {
+    font-size: 0.58rem; font-weight: 700; margin-top: 5px; padding: 2px 0;
+    border-radius: 5px; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.chip-card.chip-avail { border-color: #cde9d0; }
+.chip-card.chip-avail .chip-status { background: #37b24d; color: #fff; }
+.chip-card.chip-unavail { opacity: 0.5; filter: grayscale(1); }
+.chip-card.chip-unavail .chip-status { background: #d5d5d5; color: #777; }
+
+/* Over budget (in debt) */
+.stat-neg .stat-value { color: #e03131; }
+
+/* ============================================================
+   MY TEAM — v17 (chips aligned to pitch, tighter, mobile)
+   ============================================================ */
+
+/* Chips span the pitch width and spread edge-to-edge */
+.chips-bar { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 6px; width: 100%; }
+.pitch-wrap { max-width: 100%; }
+
+/* Tighten the gap between the header stat chips and the chips row */
+#teamBody { margin-top: 4px !important; }
+.stat-chips { margin-bottom: 6px; }
+
+/* Chips scale to the pitch on every screen (share the row width) */
+.chip-card {
+    flex: 1 1 0; min-width: 0; width: auto; max-width: 110px;
+    padding: 6px 4px; box-sizing: border-box;
+}
+.chip-img { width: 40px; height: 40px; }
+.chip-card-name { font-size: 0.66rem; }
+.chip-status { font-size: 0.55rem; }
+
+@media (max-width: 575.98px) {
+    .chip-img { width: 34px; height: 34px; }
+    .chip-card-name { font-size: 0.6rem; }
+    .chip-status { font-size: 0.52rem; }
+    .chip-card { padding: 4px 3px; }
+}

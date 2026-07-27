@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FPL Companion</title>
-    <link rel="apple-touch-icon" href="/static/iphone_icon.png">
+    <title>FPL Buddy</title>
+    <link rel="apple-touch-icon" href="../data/images/iphone_icon.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,7 +12,7 @@
 
     <nav class="navbar navbar-dark mb-4">
         <div class="container d-flex justify-content-between align-items-center">
-            <span class="navbar-brand mb-0 h1">FPL Companion</span>
+            <span class="navbar-brand mb-0 h1">FPL Buddy</span>
             <button id="modeToggle" class="btn btn-sm"></button>
         </div>
     </nav>
@@ -112,15 +112,15 @@
                     </div>
                 </div>
 
-                <!-- Pitch | Recommended transfers | Player search (inline) -->
-                <div id="teamBody" class="row g-4 mt-1">
+                <div id="transferBanner" class="sub-banner d-none mt-2"></div>
 
-                    <!-- Transfer banner spans the full width, above the pitch -->
-                    <div class="col-12"><div id="transferBanner" class="sub-banner d-none"></div></div>
+                <!-- Chips+pitch (left) | Recommended | Find players -->
+                <div id="teamBody" class="row g-3 mt-1">
 
-                    <!-- Pitch -->
-                    <div class="col-lg-5">
+                    <!-- Left box: chips above the pitch -->
+                    <div class="col-lg-5" id="pitchCol">
                         <div id="subBanner" class="sub-banner d-none"></div>
+                        <div id="chipsBar" class="chips-bar mb-2"></div>
 
                         <div class="pitch-wrap">
                             <div class="pitch" id="pitch"></div>
@@ -130,19 +130,19 @@
                         <div class="pitch-actions mt-3 mb-1">
                             <button id="optimiseBtn" class="btn btn-sm btn-primary">Optimise lineup</button>
                             <button id="optCaptainBtn" class="btn btn-sm btn-primary">Optimise captaincy</button>
-                            <button id="editDraftBtn" class="btn btn-sm btn-outline-primary d-none">Make transfers</button>
                         </div>
                         <p class="text-muted small mb-0">Tap a player to set captain, substitute or transfer. Changes are a preview &mdash; apply them in the FPL app.</p>
                     </div>
 
                     <!-- Recommended transfers -->
-                    <div class="col-lg-2">
+                    <div class="col-lg-2" id="recCol">
                         <h6 class="section-heading">Recommended transfers</h6>
-                        <div id="transferRecs"></div>
+                        <div id="transferRecs" class="mt-2"></div>
+                        <button id="refreshTransfersBtn" class="btn btn-sm btn-outline-primary mt-2">&#8635; Refresh</button>
                     </div>
 
                     <!-- Player search -->
-                    <div class="col-lg-5">
+                    <div class="col-lg-5" id="searchCol">
                         <h6 class="section-heading">Find players</h6>
                         <div id="playerSearch"></div>
                     </div>
@@ -260,6 +260,8 @@
         let subEligible = new Set();
         let pendingOuts = [];   // players marked for transfer out (multi-select)
         let activeOut = null;   // id of the pending-out currently being replaced
+        let pendingIn = null;   // player being transferred in (choose who to drop)
+        let tinEligible = new Set();
 
         function getSavedId() { return localStorage.getItem(FPL_ID_KEY); }
         function showResetBtn() { document.getElementById('resetBtn').classList.remove('d-none'); }
@@ -304,6 +306,8 @@
             closeModal();
             pendingOuts = [];
             activeOut = null;
+            pendingIn = null;
+            tinEligible = new Set();
             document.getElementById('transferBanner').classList.add('d-none');
 
             const h = view.header || {};
@@ -340,13 +344,11 @@
                     <button id="startBuild" class="btn btn-sm btn-primary">Build a team</button>`;
                 unavailable.classList.remove('d-none');
                 teamBody.classList.add('d-none');
-                document.getElementById('editDraftBtn').classList.add('d-none');
                 document.getElementById('startBuild').addEventListener('click', openBuilder);
                 return;
             }
             unavailable.classList.add('d-none');
             teamBody.classList.remove('d-none');
-            document.getElementById('editDraftBtn').classList.toggle('d-none', !view.built);
 
             renderStatChips(view.gw);
             teamView._gw0 = view.gw ? { ...view.gw } : null;   // snapshot for reset
@@ -364,6 +366,7 @@
             renderPitch();
             renderTransfers(teamView.transfer_recs);
             updatePredicted();
+            renderChips(view.gw);
 
             ensurePlayers().then(() => playerSearch.refresh());
         }
@@ -373,25 +376,31 @@
             const h = teamView.header || {};
             if (teamView.built && gw) {
                 el.innerHTML = chip('Squad value', '\u00a3' + h.value + 'm')
-                             + chip('In the bank', '\u00a3' + gw.bank + 'm')
+                             + bankChip(gw.bank)
                              + chip('Predicted', gw.predicted_points, true);
                 return;
             }
             if (!gw) {
                 el.innerHTML = chip('Total pts', h.total_points ?? '\u2013')
                              + chip('Squad value', h.value != null ? '\u00a3' + h.value + 'm' : '\u2013')
-                             + chip('In the bank', h.bank != null ? '\u00a3' + h.bank + 'm' : '\u2013');
+                             + (h.bank != null ? bankChip(h.bank) : chip('In the bank', '\u2013'));
                 return;
             }
             const tc = gw.transfers_cost ? ` (-${gw.transfers_cost})` : '';
             el.innerHTML =
                   chip('GW points', gw.points ?? '\u2013')
                 + chip('Predicted', gw.predicted_points ?? '\u2013', true)
-                + chip('In the bank', '\u00a3' + gw.bank + 'm')
+                + bankChip(gw.bank)
                 + chip('Transfers', (gw.transfers_made ?? 0) + tc)
                 + chip('Free transfers*', gw.free_transfers_est)
                 + chip('Chips left*', (gw.chips_available || []).join(', ') || 'none')
                 + (gw.active_chip ? chip('Active chip', gw.active_chip) : '');
+        }
+        function bankChip(bank) {
+            const neg = bank < 0;
+            const val = (neg ? '-\u00a3' + Math.abs(bank).toFixed(1) : '\u00a3' + Number(bank).toFixed(1)) + 'm';
+            const style = neg ? ' style="color:#e03131"' : '';
+            return `<div class="stat-chip${neg ? ' stat-neg' : ''}"><span class="stat-label">In the bank</span><span class="stat-value"${style}>${val}</span></div>`;
         }
         function chip(label, value, accent) {
             return `<div class="stat-chip${accent ? ' accent' : ''}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
@@ -404,15 +413,16 @@
                 const ha = g.was_home === true ? 'H' : (g.was_home === false ? 'A' : '');
                 const pts = g.points != null ? Number(g.points).toFixed(1) : '-';
                 return `<span class="mini-gw" style="background:${color}" title="GW${g.event}">`
-                    + `<b>${g.opponent || ''}${ha ? ' ' + ha : ''}</b>${pts}</span>`;
+                    + `<b>${g.opponent || ''}${ha ? '\u00a0' + ha : ''}</b>${pts}</span>`;
             }).join('');
         }
 
         function playerCard(p, opts) {
             opts = opts || {};
+            const bstyle = 'position:absolute;top:3px;right:3px;left:auto;bottom:auto;z-index:4';
             let badge = '';
-            if (p.id === captainId) badge = '<span class="cap-badge">C</span>';
-            else if (p.id === viceId) badge = '<span class="cap-badge vice">V</span>';
+            if (p.id === captainId) badge = `<span class="cap-badge" style="${bstyle}">C</span>`;
+            else if (p.id === viceId) badge = `<span class="cap-badge vice" style="${bstyle}">V</span>`;
             const injured = (p.status && p.status !== 'a')
                 ? `<span class="injury-dot" title="${(p.news || '').replace(/"/g, '')}"></span>` : '';
             const posLabel = opts.bench ? `<div class="bench-pos">${p.pos}</div>` : '';
@@ -423,9 +433,9 @@
             }
             if (opts.pendingOut) cls += ' pending-out' + (opts.activeOut ? ' pending-active' : '');
             const plus = opts.pendingOut ? '<div class="out-plus">+</div>' : '';
-            return `<div class="${cls}" data-id="${p.id}">
-                ${posLabel}
-                <div class="player-kit">${shirtImg(p.team_code, p.pos, 'kit')}${badge}${injured}${plus}</div>
+            return `<div class="${cls}" data-id="${p.id}" style="position:relative">
+                ${posLabel}${badge}
+                <div class="player-kit">${shirtImg(p.team_code, p.pos, 'kit')}${injured}${plus}</div>
                 <div class="player-name-pill">${p.web_name}</div>
                 <div class="player-gws">${miniFixtures(p)}</div>
             </div>`;
@@ -435,12 +445,14 @@
             const pitch = document.getElementById('pitch');
             const benchEl = document.getElementById('bench');
             const subActive = subSource != null;
+            const tinActive = pendingIn != null;
             const starters = workingSquad.filter(p => p.starting);
             const bench = workingSquad.filter(p => !p.starting).sort((a, b) => a.position - b.position);
             const cardOpts = (p, onBench) => ({
-                bench: onBench, subActive,
+                bench: onBench,
+                subActive: subActive || tinActive,
                 source: p.id === subSource,
-                eligible: subActive ? subEligible.has(p.id) : false,
+                eligible: subActive ? subEligible.has(p.id) : (tinActive ? tinEligible.has(p.id) : false),
                 pendingOut: pendingOuts.some(o => o.id === p.id),
                 activeOut: p.id === activeOut
             });
@@ -465,7 +477,11 @@
                 if (id === subSource || !subEligible.has(id)) return;   // only legal targets
                 const src = subSource; exitSubMode(); attemptSub(src, id); return;
             }
-            if (pendingOuts.some(o => o.id === id)) { setActiveOut(id); return; }
+            if (pendingIn != null) {
+                if (!tinEligible.has(id)) return;
+                const inp = pendingIn; exitTransferInMode(); performTransfer(id, inp); return;
+            }
+            if (pendingOuts.some(o => o.id === id)) { removePendingOut(id); return; }  // tap greyed → back in team
             const p = workingSquad.find(x => x.id === id);
             if (p) openPlayerModal(p, true);
         }
@@ -556,17 +572,26 @@
 
             const actions = document.getElementById('pmActions');
             if (owned) {
-                actions.innerHTML =
-                    `<button class="btn btn-sm btn-primary" id="pmCap">Make captain</button>
-                     <button class="btn btn-sm btn-outline-primary" id="pmVice">Make vice</button>
-                     <button class="btn btn-sm btn-outline-primary" id="pmSubBtn">Substitute</button>
-                     <button class="btn btn-sm btn-outline-primary" id="pmTransferBtn">Transfer out</button>`;
-                document.getElementById('pmCap').onclick = () => { captainId = p.id; if (viceId === p.id) viceId = null; showResetBtn(); renderPitch(); updatePredicted(); closeModal(); };
-                document.getElementById('pmVice').onclick = () => { viceId = p.id; if (captainId === p.id) captainId = null; renderPitch(); closeModal(); };
+                const capBtns = p.starting
+                    ? `<button class="btn btn-sm btn-primary pm-btn" id="pmCap">Captain</button>
+                       <button class="btn btn-sm btn-outline-primary pm-btn" id="pmVice">Vice</button>` : '';
+                actions.innerHTML = capBtns +
+                    `<button class="btn btn-sm btn-outline-primary pm-btn" id="pmSubBtn">Substitute</button>
+                     <button class="btn btn-sm btn-outline-primary pm-btn" id="pmTransferBtn">Transfer</button>`;
+                if (p.starting) {
+                    document.getElementById('pmCap').onclick = () => { captainId = p.id; if (viceId === p.id) viceId = null; showResetBtn(); renderPitch(); updatePredicted(); closeModal(); };
+                    document.getElementById('pmVice').onclick = () => { viceId = p.id; if (captainId === p.id) captainId = null; renderPitch(); closeModal(); };
+                }
                 document.getElementById('pmSubBtn').onclick = () => startSub(p.id);
                 document.getElementById('pmTransferBtn').onclick = () => markTransferOut(p);
             } else {
-                actions.innerHTML = '';
+                // A player from the search table: offer to transfer them in.
+                if (workingSquad) {
+                    actions.innerHTML = `<button class="btn btn-sm btn-primary pm-btn" id="pmTransferIn">Transfer in</button>`;
+                    document.getElementById('pmTransferIn').onclick = () => markTransferIn(p);
+                } else {
+                    actions.innerHTML = '';
+                }
             }
             const tbox = document.getElementById('pmTransfer');
             tbox.classList.add('d-none'); tbox.innerHTML = '';
@@ -627,16 +652,17 @@
             updateTransferBanner();
             ensurePlayers().then(() => playerSearch.refresh());
         }
-        function setActiveOut(id) {
-            activeOut = id;
-            updateTransferBanner();
-            playerSearch.refresh();
-            renderPitch();
-        }
         function cancelTransfers() {
             pendingOuts = [];
             activeOut = null;
             document.getElementById('transferBanner').classList.add('d-none');
+            playerSearch.refresh();
+            renderPitch();
+        }
+        function removePendingOut(id) {
+            pendingOuts = pendingOuts.filter(o => o.id !== id);
+            if (activeOut === id) activeOut = pendingOuts.length ? pendingOuts[0].id : null;
+            updateTransferBanner();
             playerSearch.refresh();
             renderPitch();
         }
@@ -667,9 +693,40 @@
             }
         }
 
+        // Transfer a searched player in: let the user pick who to drop.
+        function markTransferIn(inp) {
+            if (!workingSquad) return;
+            if (workingSquad.some(p => p.id === inp.id)) { alert('That player is already in your squad.'); return; }
+            closeModal();
+            cancelTransfers();
+            tinEligible = new Set(workingSquad
+                .filter(p => p.pos === inp.pos
+                    && workingSquad.filter(x => x.team === inp.team && x.id !== p.id).length < 3)
+                .map(p => p.id));
+            if (!tinEligible.size) { alert(`No affordable ${inp.pos} to swap out for ${inp.web_name}.`); return; }
+            pendingIn = inp;
+            const banner = document.getElementById('transferBanner');
+            banner.innerHTML = `Transferring in <strong>${inp.web_name}</strong> \u2014 tap a highlighted player to swap out. `
+                + `<button id="tinCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel</button>`;
+            banner.classList.remove('d-none');
+            document.getElementById('tinCancel').onclick = exitTransferInMode;
+            renderPitch();
+            banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        function exitTransferInMode() {
+            pendingIn = null; tinEligible = new Set();
+            document.getElementById('transferBanner').classList.add('d-none');
+            renderPitch();
+        }
+
         function performTransfer(outId, inp) {
             const idx = workingSquad.findIndex(p => p.id === outId);
             if (idx < 0) return;
+            // Enforce max 3 players from any single club.
+            if (workingSquad.filter(p => p.team === inp.team && p.id !== outId).length >= 3) {
+                alert(`You can only have 3 players from one club.`);
+                return;
+            }
             const old = workingSquad[idx];
             if (teamView.gw) teamView.gw.bank = +((teamView.gw.bank || 0) - (inp.cost - old.cost)).toFixed(1);
             workingSquad[idx] = { ...inp, position: old.position, starting: old.starting,
@@ -731,9 +788,61 @@
             playerSearch.refresh();
         });
 
+        // ---- Refresh recommended transfers (recompute from the current squad) ----
+        document.getElementById('refreshTransfersBtn').addEventListener('click', () => {
+            if (!workingSquad) return;
+            ensurePlayers().then(() => {
+                const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
+                // Preseason / draft => unlimited transfers, so nothing is a points hit.
+                const ft = teamView.built ? Infinity
+                    : ((teamView.gw && typeof teamView.gw.free_transfers_est === 'number') ? teamView.gw.free_transfers_est : 1);
+                teamView.transfer_recs = computeTransfers(workingSquad, allPlayers, bank, ft);
+                teamView._recs0 = teamView.transfer_recs.slice();
+                renderTransfers(teamView.transfer_recs);
+            });
+        });
+
+        // ---- Chips strip above the pitch (image cards + hover/press info) ----
+        let chipTips = [];
+        function renderChips(gw) {
+            const bar = document.getElementById('chipsBar');
+            chipTips.forEach(t => t.remove()); chipTips = [];
+            const avail = (gw && gw.chips_available) || [];
+
+            const bench = (workingSquad || []).filter(p => !p.starting);
+            const benchPts = +bench.reduce((s, p) => s + (p.predicted || 0), 0).toFixed(1);
+            const cap = (workingSquad || []).find(p => p.id === captainId);
+            const capPts = cap ? +(cap.predicted || 0).toFixed(1) : 0;
+            const bigGains = (teamView.transfer_recs || []).filter(r => r.rating_gain >= 5).length;
+
+            const CHIPS = [
+                { key: 'wildcard', name: 'Wildcard', note: `Wildcard: unlimited free transfers this gameweek. ${bigGains} big upgrades available now.` },
+                { key: 'freehit', name: 'Free Hit', note: `Free Hit: change your whole team for one gameweek. Best for blank/double gameweeks.` },
+                { key: 'bboost', name: 'Bench Boost', note: `Bench Boost: your bench also scores. Bench projected ${benchPts} pts this gameweek.` },
+                { key: '3xc', name: 'Triple Captain', note: cap ? `Triple Captain: captain scores x3. ${cap.web_name} projected ${capPts} pts (x3 = ${(capPts * 3).toFixed(1)}).` : `Triple Captain: captain scores x3 \u2014 pick a strong captain first.` }
+            ];
+
+            bar.innerHTML = CHIPS.map(c => {
+                const available = avail.includes(c.key);
+                return `<div class="chip-card ${available ? 'chip-avail' : 'chip-unavail'}" tabindex="0" data-i="${c.key}">
+                    <img class="chip-img" src="/static/${c.key}.png" alt="${c.name}" onerror="this.style.visibility='hidden'">
+                    <div class="chip-card-name">${c.name}</div>
+                    <div class="chip-status">${available ? 'Available' : 'Unavailable'}</div>
+                </div>`;
+            }).join('');
+            bar.querySelectorAll('.chip-card').forEach(card => {
+                const c = CHIPS.find(x => x.key === card.dataset.i);
+                chipTips.push(attachTip(card, c ? c.note : ''));
+            });
+        }
+
         // ---- Save team (persist the current squad + lineup locally) ----
         document.getElementById('saveTeamBtn').addEventListener('click', () => {
             if (!workingSquad || workingSquad.length !== 15) return;
+            if (teamView.gw && teamView.gw.bank < 0) {
+                alert(`You're \u00a3${Math.abs(teamView.gw.bank).toFixed(1)}m over budget \u2014 sort your transfers before saving.`);
+                return;
+            }
             const snap = workingSquad.map(p => ({
                 ...p, is_captain: p.id === captainId, is_vice_captain: p.id === viceId
             }));
@@ -923,7 +1032,7 @@
                     </div>
                 </div>
                 <div class="ps-rec"></div>
-                <div class="ps-list"></div>`;
+                <div class="ps-list" style="overflow:auto"></div>`;
             const qEl = c.querySelector('.ps-q');
             const posEl = c.querySelector('.ps-pos');
             const teamEl = c.querySelector('.ps-team');
@@ -965,7 +1074,11 @@
             }
             function rowHtml(p) {
                 const form = p.form != null ? p.form.toFixed(1) : '\u2013';
-                return `<tr class="ps-row" data-id="${p.id}">
+                const disabled = cfg.rowDisabled ? cfg.rowDisabled(p) : false;
+                const dattr = disabled
+                    ? ' style="opacity:0.4;cursor:not-allowed" title="Max 3 players from one club"'
+                    : '';
+                return `<tr class="ps-row${disabled ? ' ps-disabled' : ''}"${dattr} data-id="${p.id}">
                     <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span></td>
                     <td>${p.pos}</td>
                     <td>${p.team_name || ''}</td>
@@ -997,13 +1110,14 @@
                     const rec = pool().filter(cfg.transferCandidate).sort((a, b) => b.rating - a.rating).slice(0, 3);
                     recEl.innerHTML = rec.length
                         ? `<div class="ps-rec-label">Recommended \u2014 tap to transfer in</div>
-                           <table class="table table-sm ps-table mb-2">${headHtml()}<tbody>${rec.map(rowHtml).join('')}</tbody></table>`
+                           <div class="ps-list" style="overflow:auto"><table class="table table-sm ps-table mb-0" style="min-width:560px">${headHtml()}<tbody>${rec.map(rowHtml).join('')}</tbody></table></div>`
                         : '';
                 } else { recEl.innerHTML = ''; }
 
                 listEl.innerHTML = rows.length
-                    ? `<table class="table table-sm ps-table mb-0 ${transfer ? 'ps-transfer' : ''}">${headHtml()}<tbody>${rows.map(rowHtml).join('')}</tbody></table>`
+                    ? `<table class="table table-sm ps-table mb-0 ${transfer ? 'ps-transfer' : ''}" style="min-width:560px">${headHtml()}<tbody>${rows.map(rowHtml).join('')}</tbody></table>`
                     : '<p class="text-muted small p-2">No players match.</p>';
+                listEl.scrollTop = 0; listEl.scrollLeft = 0;
 
                 c.querySelectorAll('.ps-sortable').forEach(th => th.addEventListener('click', () => {
                     const k = th.dataset.key;
@@ -1013,6 +1127,7 @@
                 }));
                 // Whole row is clickable: transfer the player in, or open their card.
                 c.querySelectorAll('.ps-row').forEach(r => r.addEventListener('click', () => {
+                    if (r.classList.contains('ps-disabled')) return;
                     const p = pool().find(x => x.id === +r.dataset.id);
                     if (!p) return;
                     if (transfer) cfg.onTransfer(p); else cfg.onBrowse(p);
@@ -1041,11 +1156,13 @@
             transferCandidate: (p) => {
                 const out = activeOutPlayer();
                 if (!out) return true;
-                const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
                 const ownedIds = new Set(workingSquad.map(x => x.id));
-                return p.pos === out.pos && !ownedIds.has(p.id)
-                    && p.cost <= bank + out.cost
-                    && workingSquad.filter(x => x.team === p.team && x.id !== out.id).length < 3;
+                return p.pos === out.pos && !ownedIds.has(p.id);
+            },
+            rowDisabled: (p) => {
+                const out = activeOutPlayer();
+                if (!out) return false;
+                return workingSquad.filter(x => x.team === p.team && x.id !== out.id).length >= 3;
             },
             onTransfer: (p) => resolveTransfer(p),
             onBrowse: (p) => {
@@ -1179,7 +1296,7 @@
             document.getElementById('teamBuilder').classList.add('d-none');
             showBuiltTeam(builderPicked, teamView ? teamView.leagues : {});
         });
-        document.getElementById('editDraftBtn').addEventListener('click', openBuilder);
+        // (Draft editing is now done directly via the pitch / transfers.)
 
         // ---- Client-side optimise / transfers for a built team ----
         function optimiseSquad(squad) {
@@ -1264,7 +1381,8 @@
             renderTeam({
                 available: true, built: true,
                 header: { name: 'Draft XI', manager: 'Built locally', value: spent, bank: bank },
-                gw: { event: null, points: null, predicted_points: predGw, bank: bank, value: spent },
+                gw: { event: null, points: null, predicted_points: predGw, bank: bank, value: spent,
+                      chips_available: ['wildcard', 'freehit', 'bboost', '3xc'] },
                 squad: squad,
                 recommended: { captain: capId, vice: vId },
                 optimised: optimiseSquad(squad),
@@ -1273,13 +1391,37 @@
             });
         }
 
-        // ---- Info-icon tooltip ----
-        document.querySelectorAll('.info-icon').forEach(el => {
+        // ---- Reusable tooltip (body-level so nothing traps it) ----
+        function attachTip(el, text) {
             const tip = document.createElement('div');
             tip.className = 'info-tip';
-            tip.textContent = el.dataset.tip;
-            el.appendChild(tip);
-        });
+            tip.textContent = text;
+            tip.style.display = 'none';
+            document.body.appendChild(tip);
+            function show() {
+                tip.style.display = 'block';
+                if (window.matchMedia('(max-width: 576px)').matches) {
+                    Object.assign(tip.style, {
+                        position: 'fixed', top: '50%', left: '50%', right: 'auto', bottom: 'auto',
+                        transform: 'translate(-50%, -50%)', width: '88vw', maxWidth: '320px', zIndex: '3000'
+                    });
+                } else {
+                    const r = el.getBoundingClientRect();
+                    Object.assign(tip.style, {
+                        position: 'fixed', top: (r.bottom + 6) + 'px', left: r.left + 'px',
+                        right: 'auto', bottom: 'auto', transform: 'none', width: '240px', zIndex: '3000'
+                    });
+                }
+            }
+            function hide() { tip.style.display = 'none'; }
+            el.addEventListener('mouseenter', show);
+            el.addEventListener('mouseleave', () => { if (!window.matchMedia('(max-width: 576px)').matches) hide(); });
+            el.addEventListener('click', e => { e.stopPropagation(); tip.style.display === 'none' ? show() : hide(); });
+            document.addEventListener('click', hide);
+            window.addEventListener('resize', hide);
+            return tip;
+        }
+        document.querySelectorAll('.info-icon').forEach(el => attachTip(el, el.dataset.tip));
 
         // =====================================================================
         //  FIXTURE ROTATOR

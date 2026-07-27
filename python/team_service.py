@@ -216,19 +216,19 @@ BROADCASTER_HINTS = ("sky", "espn", "the sun", "talksport", "bbc", "itv",
 
 def _categorise_leagues(entry):
     """Split classic leagues into personal / general / broadcaster.
-    - league_type 's' = private mini-leagues you joined => personal
-    - the rest are FPL's auto public leagues => general, unless the name looks
-      like a broadcaster league."""
+    In the FPL API, league_type 's' = system/auto public leagues (Overall,
+    Gameweek, country...) => general; anything else is an invitational league
+    you joined => personal. Broadcaster leagues are matched by name first."""
     groups = {"personal": [], "general": [], "broadcaster": []}
     for l in entry.get("leagues", {}).get("classic", []):
         item = {"id": l["id"], "name": l["name"], "rank": l.get("entry_rank")}
         name = (l.get("name") or "").lower()
-        if l.get("league_type") == "s":
-            groups["personal"].append(item)
-        elif any(h in name for h in BROADCASTER_HINTS):
+        if any(h in name for h in BROADCASTER_HINTS):
             groups["broadcaster"].append(item)
-        else:
+        elif l.get("league_type") == "s":
             groups["general"].append(item)
+        else:
+            groups["personal"].append(item)
     return groups
 
 
