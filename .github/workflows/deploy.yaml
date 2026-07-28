@@ -28,5 +28,3 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/mylesfairburn/fpl-companion:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
