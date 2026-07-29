@@ -846,7 +846,7 @@
             const snap = workingSquad.map(p => ({
                 ...p, is_captain: p.id === captainId, is_vice_captain: p.id === viceId
             }));
-            localStorage.setItem(BUILT_KEY, JSON.stringify(snap.map(p => ({
+                localStorage.setItem(builtKey(), JSON.stringify(snap.map(p => ({                
                 id: p.id, web_name: p.web_name, pos: p.pos, team: p.team, team_code: p.team_code,
                 cost: p.cost, rating: p.rating, predicted: p.predicted, form: p.form,
                 team_name: p.team_name, next_gameweeks: p.next_gameweeks,
@@ -944,14 +944,13 @@
         // =====================================================================
         //  PLAYER POOL — builder, picker, shared filters
         // =====================================================================
-        const BUILT_KEY = 'fpl_built_squad';
-        const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
+        function builtKey(id) { return `fpl_built_squad_${id || getSavedId() || 'none'}`; }        const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
         const BUDGET = 100.0;
         const CLUB_LIMIT = 3;
         let allPlayers = null;
         let builderPicked = [];
 
-        function getBuilt() { try { return JSON.parse(localStorage.getItem(BUILT_KEY)); } catch (e) { return null; } }
+        function getBuilt() { try { return JSON.parse(localStorage.getItem(builtKey())); } catch (e) { return null; } }        
         function ensurePlayers() {
             if (allPlayers) return Promise.resolve(allPlayers);
             return fetch('/api/all_players').then(r => r.json()).then(d => { allPlayers = d.players || []; return allPlayers; });
@@ -1292,7 +1291,7 @@
             loadTeam();
         });
         document.getElementById('builderSave').addEventListener('click', () => {
-            localStorage.setItem(BUILT_KEY, JSON.stringify(builderPicked));
+            localStorage.setItem(builtKey(), JSON.stringify(builderPicked));            
             document.getElementById('teamBuilder').classList.add('d-none');
             showBuiltTeam(builderPicked, teamView ? teamView.leagues : {});
         });
@@ -1605,9 +1604,14 @@
         });
 
         // ---- Initial load ----
-        if (getSavedId()) loadTeam(); else showPrompt();
-        ensurePlayers().then(() => playersTabSearch.refresh());
-        loadRotation();
+        const id = getSavedId();
+        if (!id) {
+            showPrompt();
+        } else if (getBuilt() && getBuilt().length === 15) {
+            ensurePlayers().then(() => showBuiltTeam(getBuilt(), {}));
+        } else {
+            loadTeam();
+        }
     </script>
 
 </body>
