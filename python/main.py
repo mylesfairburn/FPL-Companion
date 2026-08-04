@@ -15,7 +15,8 @@ from pipeline import run_pipeline
 from rating_model import get_rated_position_dfs
 from fixture_rotator import (get_rotation_data, rank_rotation_pairs, recommend_pair_players, team_fixture_map)
 from search import search_player
-from team_service import get_team_view, get_league_standings, get_all_players, get_player_summary
+from team_service import (get_team_view, get_league_standings, get_all_players, get_player_summary,
+                          get_news_feed, get_underperforming_players)
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -144,6 +145,12 @@ def team(team_id: int, event: int = None):
     return get_team_view(team_id, event, state["position_dfs"])
 
 
+@app.get("/api/news")
+def news(limit: int = 20):
+    """Latest injury/transfer news snippets for the My Team news feed."""
+    return get_news_feed(limit=limit)
+
+
 @app.get("/api/league/{league_id}")
 def league(league_id: int, page: int = 1):
     """Top of a classic league's standings table."""
@@ -152,8 +159,15 @@ def league(league_id: int, page: int = 1):
 
 @app.get("/api/all_players")
 def all_players():
-    """Full rated pool for the preseason team builder."""
+    """Full rated player pool - powers search/transfers and building a squad
+    from empty pitch slots."""
     return get_all_players(state["position_dfs"])
+
+
+@app.get("/api/underperforming")
+def underperforming(top_n: int = 20):
+    """Players whose actual returns lag their underlying xG/xGC numbers."""
+    return get_underperforming_players(state["position_dfs"], top_n=top_n)
 
 
 @app.get("/api/player/{player_id}")

@@ -12,6 +12,7 @@ both are DERIVED here (walk the history / infer from used chips) and flagged as
 estimates in the response.
 """
 
+import pandas as pd
 import requests
 
 from fetch_data import get_bootstrap_data
@@ -247,6 +248,110 @@ def get_all_players(position_dfs):
     return {"players": players}
 
 
+_PREV_SEASON_UNDERPERF_STATS = None
+_PREV_STAT_COLS = ["expected_goals", "goals_scored", "expected_goals_conceded", "goals_conceded", "minutes"]
+
+
+def _prev_season_stats_by_code():
+    """code -> {expected_goals, goals_scored, expected_goals_conceded,
+    goals_conceded, minutes} summed across last season's full totals - the
+    fallback source for underperforming-players before the current season
+    has enough minutes played for anyone to judge (preseason, or the first
+    few GWs). previous_season_stats.csv is PER-GAMEWEEK (one row per player
+    per match), so it has to be grouped and summed to get season totals -
+    keeping only the last row per player would just be that player's most
+    recent single match."""
+    global _PREV_SEASON_UNDERPERF_STATS
+    if _PREV_SEASON_UNDERPERF_STATS is None:
+        try:
+            stats = pd.read_csv("../data/raw/previous_season_stats.csv")
+            players = pd.read_csv("../data/raw/previous_season_players.csv")
+        except (FileNotFoundError, OSError):
+            _PREV_SEASON_UNDERPERF_STATS = {}
+            return _PREV_SEASON_UNDERPERF_STATS
+        id_to_code = dict(zip(players["id"], players["code"]))
+        stats = stats.copy()
+        stats["code"] = stats["player_id"].map(id_to_code)
+        stats = stats.dropna(subset=["code"])
+        for c in _PREV_STAT_COLS:
+            stats[c] = pd.to_numeric(stats[c], errors="coerce")
+        totals = stats.groupby("code")[_PREV_STAT_COLS].sum()
+        _PREV_SEASON_UNDERPERF_STATS = {
+            int(code): {c: row[c] for c in _PREV_STAT_COLS}
+            for code, row in totals.iterrows()
+        }
+    return _PREV_SEASON_UNDERPERF_STATS
+
+
+def get_underperforming_players(position_dfs, top_n=20, min_minutes=180, min_minutes_prev=900):
+    """Players whose underlying numbers say they should be doing better than
+    their actual returns show:
+      - Midfielders/forwards: goals scored well below expected goals (xG) -
+        finishing worse than the chances they're getting deserve.
+      - Goalkeepers/defenders: goals conceded well above expected goals
+        conceded (xGC) - the defence/keeper shipping more than the underlying
+        play suggests they should.
+    Both are FPL's own per-90 underlying-stat fields, straight from
+    bootstrap-static. Falls back to last season's full totals (keyed by the
+    season-stable 'code', not 'id') for anyone short of min_minutes so far
+    this season - otherwise the table is empty for the whole preseason and
+    the first few gameweeks.
+
+    top_n is applied PER group (attackers, defenders) rather than to a single
+    combined-then-sorted list - otherwise one group's generally larger diffs
+    (e.g. keepers/defenders often show bigger xGC gaps than attackers show xG
+    gaps) could crowd the other group out of the top_n entirely."""
+    if position_dfs is None:
+        return {"results": []}
+    short = _team_short_map()
+    prev_stats = _prev_season_stats_by_code()
+    attacking_rows, defensive_rows = [], []
+    for pos_name, df in position_dfs.items():
+        attacking = pos_name in ("Midfielder", "Forward")
+        rows = attacking_rows if attacking else defensive_rows
+        for _, r in df.iterrows():
+            minutes = _num(r.get("minutes")) or 0
+            source, used_fallback = r, False
+            if minutes < min_minutes:
+                code = int(r["code"]) if r.get("code") == r.get("code") else None
+                fb = prev_stats.get(code) if code is not None else None
+                fb_minutes = (fb or {}).get("minutes") or 0
+                if not fb or fb_minutes < min_minutes_prev:
+                    continue
+                source, used_fallback, minutes = fb, True, fb_minutes
+            if attacking:
+                expected = _num(source.get("expected_goals"))
+                actual = _num(source.get("goals_scored"))
+                metric = "Goals vs xG"
+            else:
+                expected = _num(source.get("expected_goals_conceded"))
+                actual = _num(source.get("goals_conceded"))
+                metric = "Conceded vs xGC"
+            if expected is None or actual is None:
+                continue
+            diff = (expected - actual) if attacking else (actual - expected)
+            if diff <= 0:
+                continue  # performing at or above expectation on this metric
+            next_gws = r.get("next_gameweeks")
+            rows.append({
+                "id": int(r["id"]), "web_name": r.get("web_name", ""),
+                "pos": POS_SHORT.get(int(r["element_type"]), "?"),
+                "team_code": int(r["team_code"]) if r.get("team_code") == r.get("team_code") else None,
+                "team_name": short.get(int(r["team"])) if r.get("team") == r.get("team") else None,
+                "cost": round(float(r["now_cost"]) / 10, 1) if r.get("now_cost") is not None else None,
+                "metric": metric,
+                "expected": round(expected, 2),
+                "actual": round(actual, 2),
+                "diff": round(diff, 2),
+                "minutes": int(minutes),
+                "season": "last season" if used_fallback else "this season",
+                "next_gameweeks": next_gws[:3] if isinstance(next_gws, list) else [],
+            })
+    attacking_rows.sort(key=lambda x: -x["diff"])
+    defensive_rows.sort(key=lambda x: -x["diff"])
+    return {"results": attacking_rows[:top_n] + defensive_rows[:top_n]}
+
+
 def get_player_summary(player_id, n=6):
     """Recent per-gameweek performance for one player (plus last few seasons),
     for the player pop-up. Current-season history is empty until the season
@@ -355,6 +460,27 @@ def get_team_view(team_id, event, position_dfs):
         "current_event": current_event,
         "min_event": 1,
     }
+
+
+def get_news_feed(limit=20):
+    """Most recent injury/transfer blurbs, straight from FPL's own per-player
+    'news' field (the same text the FPL site shows next to a flagged player).
+    No separate news source needed - every flagged player already carries one."""
+    data = _get(f"{BASE}/bootstrap-static/")
+    if data is None:
+        return {"available": False, "stories": []}
+    short = _team_short_map()
+    items = [e for e in data.get("elements", []) if (e.get("news") or "").strip()]
+    items.sort(key=lambda e: e.get("news_added") or "", reverse=True)
+    stories = [{
+        "player": e.get("web_name", ""),
+        "team": short.get(e.get("team"), ""),
+        "team_code": e.get("team_code"),
+        "headline": e.get("news", ""),
+        "date": (e.get("news_added") or "")[:10],
+        "status": e.get("status"),
+    } for e in items[:limit]]
+    return {"available": True, "stories": stories}
 
 
 def get_league_standings(league_id, page=1):

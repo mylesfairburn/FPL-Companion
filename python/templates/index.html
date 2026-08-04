@@ -69,49 +69,6 @@
 
                 <div id="teamUnavailable" class="alert alert-secondary d-none"></div>
 
-                <!-- Team builder (preseason) -->
-                <div id="teamBuilder" class="d-none">
-                    <div class="builder-bar">
-                        <span id="builderBudget" class="builder-stat"></span>
-                        <span id="builderCount" class="builder-stat"></span>
-                        <div class="ms-auto d-flex gap-2">
-                            <button id="builderSave" class="btn btn-sm btn-primary" disabled>Save team</button>
-                            <button id="builderClear" class="btn btn-sm btn-outline-primary">Clear</button>
-                            <button id="builderCancel" class="btn btn-sm btn-link">cancel</button>
-                        </div>
-                    </div>
-                    <div class="row g-3 mt-1">
-                        <div class="col-lg-5"><div id="builderSquad"></div></div>
-                        <div class="col-lg-7">
-                            <div class="picker-filters mb-2">
-                                <div class="search-clear-wrap w-100 mb-2">
-                                    <input id="builderSearch" class="form-control form-control-sm" placeholder="Search player...">
-                                    <button class="search-clear" id="builderSearchClear" type="button">&times;</button>
-                                </div>
-                                <div class="d-flex gap-2 mb-2 flex-wrap">
-                                    <select id="builderPos" class="form-select form-select-sm" style="max-width:130px">
-                                        <option value="All">All positions</option>
-                                        <option>GK</option><option>DEF</option><option>MID</option><option>FWD</option>
-                                    </select>
-                                    <select id="builderTeam" class="form-select form-select-sm" style="max-width:120px">
-                                        <option value="All">All teams</option>
-                                    </select>
-                                    <button id="builderReset" class="btn btn-sm btn-outline-primary">Reset filters</button>
-                                </div>
-                                <div class="price-range">
-                                    <div class="price-label">Price: <span id="builderPriceLabel"></span></div>
-                                    <div class="range-wrap">
-                                        <div class="range-fill" id="builderPriceFill"></div>
-                                        <input type="range" id="builderPriceMin" min="3.5" max="17" step="0.5" value="3.5">
-                                        <input type="range" id="builderPriceMax" min="3.5" max="17" step="0.5" value="17">
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="builderList" class="builder-list"></div>
-                        </div>
-                    </div>
-                </div>
-
                 <div id="transferBanner" class="sub-banner d-none mt-2"></div>
 
                 <!-- Chips+pitch (left) | Recommended | Find players -->
@@ -131,7 +88,7 @@
                             <button id="optimiseBtn" class="btn btn-sm btn-primary">Optimise lineup</button>
                             <button id="optCaptainBtn" class="btn btn-sm btn-primary">Optimise captaincy</button>
                         </div>
-                        <p class="text-muted small mb-0">Tap a player to set captain, substitute or transfer. Changes are a preview &mdash; apply them in the FPL app.</p>
+                        <p class="text-muted small mb-0">Changes are only a preview &mdash; apply them in the official FPL app or website.</p>
                     </div>
 
                     <!-- Recommended transfers -->
@@ -149,14 +106,14 @@
 
                     <!-- Leagues + news -->
                     <div class="col-12">
-                        <div class="row g-3 mt-1">
+                        <div class="row g-3 mt-1 leagues-news-row">
                             <div class="col-lg-8" id="leaguesSection">
                                 <h6 class="section-heading">Your leagues</h6>
                                 <div id="leaguesList"></div>
                             </div>
-                            <div class="col-lg-4">
+                            <div class="col-lg-4 news-col">
                                 <h6 class="section-heading">News feed</h6>
-                                <p class="text-muted small mb-0" id="newsPlaceholder">Injury &amp; transfer news would go here.</p>
+                                <div id="newsList" class="news-list"></div>
                             </div>
                         </div>
                     </div>
@@ -167,7 +124,28 @@
 
         <!-- ============ PLAYERS ============ -->
         <div id="pane-players" class="tab-pane d-none">
+            <ul class="nav nav-pills mb-3" id="playersViewTabs">
+                <li class="nav-item"><button class="nav-link active" data-view="all">All players</button></li>
+                <li class="nav-item"><button class="nav-link" data-view="underperforming">Underperforming</button></li>
+            </ul>
             <div id="playersTabSearch"></div>
+            <div id="underperformingView" class="d-none">
+                <p class="text-muted small mb-2">Uses underlying stats to identify underperforming player, goals below xG for
+                    attackers, goals conceded above xGC for keepers/defenders.</p>
+                <ul class="nav nav-pills mb-2" id="underperfPosTabs">
+                    <li class="nav-item"><button class="nav-link active" data-group="attackers">Attackers</button></li>
+                    <li class="nav-item"><button class="nav-link" data-group="defenders">Defenders</button></li>
+                </ul>
+                <div class="ps-list" style="overflow:auto">
+                    <table class="table table-sm underperf-table mb-0" style="min-width:680px">
+                        <thead><tr>
+                            <th>Player</th><th>Pos</th><th>Team</th><th>Metric</th>
+                            <th>Expected</th><th>Actual</th><th>Diff</th><th>£m</th><th>Next 3</th>
+                        </tr></thead>
+                        <tbody id="underperfBody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- ============ FIXTURE ROTATOR ============ -->
@@ -258,10 +236,11 @@
         let selectedEvent = null;
         let subSource = null;   // id of the player currently being substituted
         let subEligible = new Set();
-        let pendingOuts = [];   // players marked for transfer out (multi-select)
-        let activeOut = null;   // id of the pending-out currently being replaced
+        let pendingOuts = [];   // players marked for transfer out (multi-select, all live at once —
+                                 // e.g. a marked-out DEF and MID both show DEF/MID candidates together)
         let pendingIn = null;   // player being transferred in (choose who to drop)
         let tinEligible = new Set();
+        let transfersUsed = 0;   // real (non-empty-slot) transfers made this preview session
 
         function getSavedId() { return localStorage.getItem(FPL_ID_KEY); }
         function showResetBtn() { document.getElementById('resetBtn').classList.remove('d-none'); }
@@ -301,25 +280,28 @@
             teamView = view;
             teamContent.classList.remove('d-none');
             idPrompt.classList.add('d-none');
-            document.getElementById('teamBuilder').classList.add('d-none');
             exitSubMode();
             closeModal();
             pendingOuts = [];
-            activeOut = null;
             pendingIn = null;
             tinEligible = new Set();
+            transfersUsed = 0;
             document.getElementById('transferBanner').classList.add('d-none');
 
             const h = view.header || {};
             document.getElementById('teamName').textContent = h.name || 'Your team';
             document.getElementById('managerName').textContent = h.manager || '';
 
+            // Gameweek nav is always visible once a team is being viewed \u2014 it's
+            // just disabled with a neutral label when there's no live gameweek
+            // to navigate (preseason / still-being-built squad).
             const gwNav = document.getElementById('gwNav');
+            gwNav.classList.remove('d-none');
             if (view.built) {
-                document.getElementById('gwLabel').textContent = 'Draft XI';
-                gwNav.classList.add('d-none');
+                document.getElementById('gwLabel').textContent = 'Preseason';
+                document.getElementById('gwPrev').disabled = true;
+                document.getElementById('gwNext').disabled = true;
             } else {
-                gwNav.classList.remove('d-none');
                 selectedEvent = view.gw ? view.gw.event : (selectedEvent || view.current_event);
                 document.getElementById('gwLabel').textContent = selectedEvent ? `GW${selectedEvent}` : 'GW\u2013';
                 const cur = view.current_event, minE = view.min_event || 1;
@@ -340,11 +322,18 @@
                     ensurePlayers().then(() => showBuiltTeam(built, view.leagues));
                     return;
                 }
-                unavailable.innerHTML = `<div class="mb-2">${view.detail || 'Team not available.'}</div>
-                    <button id="startBuild" class="btn btn-sm btn-primary">Build a team</button>`;
-                unavailable.classList.remove('d-none');
-                teamBody.classList.add('d-none');
-                document.getElementById('startBuild').addEventListener('click', openBuilder);
+                if (!view.header) {
+                    // Genuine error (bad ID, fetch failure) \u2014 nothing to build on.
+                    unavailable.innerHTML = `<div class="mb-2">${view.detail || 'Team not available.'}</div>`;
+                    unavailable.classList.remove('d-none');
+                    teamBody.classList.add('d-none');
+                    return;
+                }
+                // Valid manager, but no live gameweek data yet (preseason) \u2014 show
+                // the normal pitch view with empty slots to pick a squad into,
+                // instead of a separate builder page.
+                unavailable.classList.add('d-none');
+                ensurePlayers().then(() => showBuiltTeam(emptySquad(), view.leagues));
                 return;
             }
             unavailable.classList.add('d-none');
@@ -377,6 +366,7 @@
             if (teamView.built && gw) {
                 el.innerHTML = chip('Squad value', '\u00a3' + h.value + 'm')
                              + bankChip(gw.bank)
+                             + freeTransfersChip(gw)
                              + chip('Predicted', gw.predicted_points, true);
                 return;
             }
@@ -391,10 +381,32 @@
                   chip('GW points', gw.points ?? '\u2013')
                 + chip('Predicted', gw.predicted_points ?? '\u2013', true)
                 + bankChip(gw.bank)
+                + freeTransfersChip(gw)
                 + chip('Transfers', (gw.transfers_made ?? 0) + tc)
-                + chip('Free transfers*', gw.free_transfers_est)
                 + chip('Chips left*', (gw.chips_available || []).join(', ') || 'none')
                 + (gw.active_chip ? chip('Active chip', gw.active_chip) : '');
+        }
+        // Free transfers remaining this preview session, next to the bank chip.
+        // Once transfersUsed exceeds the free allowance, each extra manual
+        // transfer is a -4 point hit (reflected here and in computePredicted).
+        // Preseason / a locally-built draft has no real gameweek deadline yet,
+        // so \u2014 same as the real FPL app before the season starts \u2014 transfers
+        // there are unlimited and never incur a hit.
+        function transferHitPoints() {
+            if (teamView && teamView.built) return 0;
+            const free = (teamView && teamView.gw && typeof teamView.gw.free_transfers_est === 'number')
+                ? teamView.gw.free_transfers_est : 1;
+            return Math.max(0, transfersUsed - free) * 4;
+        }
+        function freeTransfersChip(gw) {
+            if (teamView && teamView.built) {
+                return `<div class="stat-chip"><span class="stat-label">Free transfers</span><span class="stat-value">Unlimited</span></div>`;
+            }
+            const free = (gw && typeof gw.free_transfers_est === 'number') ? gw.free_transfers_est : 1;
+            const hitPts = transferHitPoints();
+            const remaining = Math.max(0, free - transfersUsed);
+            const val = hitPts > 0 ? `0 <span class="stat-hit">(\u2212${hitPts} hit)</span>` : String(remaining);
+            return `<div class="stat-chip${hitPts > 0 ? ' stat-neg' : ''}"><span class="stat-label">Free transfers</span><span class="stat-value">${val}</span></div>`;
         }
         function bankChip(bank) {
             const neg = bank < 0;
@@ -419,19 +431,32 @@
 
         function playerCard(p, opts) {
             opts = opts || {};
-            const bstyle = 'position:absolute;top:3px;right:3px;left:auto;bottom:auto;z-index:4';
-            let badge = '';
-            if (p.id === captainId) badge = `<span class="cap-badge" style="${bstyle}">C</span>`;
-            else if (p.id === viceId) badge = `<span class="cap-badge vice" style="${bstyle}">V</span>`;
-            const injured = (p.status && p.status !== 'a')
-                ? `<span class="injury-dot" title="${(p.news || '').replace(/"/g, '')}"></span>` : '';
+            const isEmpty = p.id < 0;
             const posLabel = opts.bench ? `<div class="bench-pos">${p.pos}</div>` : '';
             let cls = 'player';
             if (opts.subActive) {
                 if (opts.source) cls += ' sub-source';
                 else cls += opts.eligible ? ' sub-eligible' : ' sub-ineligible';
             }
-            if (opts.pendingOut) cls += ' pending-out' + (opts.activeOut ? ' pending-active' : '');
+            if (isEmpty) {
+                // Empty squad slot — tap it to search for a player to fill it.
+                // All pending-out slots are equally "live" at once now (a
+                // multitransfer isn't limited to one at a time), so every one
+                // marked gets the highlighted look, not just the last-marked.
+                cls += ' empty-slot' + (opts.pendingOut ? ' empty-active' : '');
+                return `<div class="${cls}" data-id="${p.id}" style="position:relative">
+                    ${posLabel}
+                    <div class="empty-slot-icon">+</div>
+                    <div class="player-name-pill">Add ${p.pos}</div>
+                </div>`;
+            }
+            const bstyle = 'position:absolute;top:3px;right:3px;left:auto;bottom:auto;z-index:4';
+            let badge = '';
+            if (p.id === captainId) badge = `<span class="cap-badge" style="${bstyle}">C</span>`;
+            else if (p.id === viceId) badge = `<span class="cap-badge vice" style="${bstyle}">V</span>`;
+            const injured = (p.status && p.status !== 'a')
+                ? `<span class="injury-dot" title="${(p.news || '').replace(/"/g, '')}"></span>` : '';
+            if (opts.pendingOut) cls += ' pending-out pending-active';
             const plus = opts.pendingOut ? '<div class="out-plus">+</div>' : '';
             return `<div class="${cls}" data-id="${p.id}" style="position:relative">
                 ${posLabel}${badge}
@@ -453,8 +478,7 @@
                 subActive: subActive || tinActive,
                 source: p.id === subSource,
                 eligible: subActive ? subEligible.has(p.id) : (tinActive ? tinEligible.has(p.id) : false),
-                pendingOut: pendingOuts.some(o => o.id === p.id),
-                activeOut: p.id === activeOut
+                pendingOut: pendingOuts.some(o => o.id === p.id)
             });
 
             pitch.innerHTML = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
@@ -481,8 +505,9 @@
                 if (!tinEligible.has(id)) return;
                 const inp = pendingIn; exitTransferInMode(); performTransfer(id, inp); return;
             }
-            if (pendingOuts.some(o => o.id === id)) { removePendingOut(id); return; }  // tap greyed → back in team
+            if (pendingOuts.some(o => o.id === id)) { removePendingOut(id); return; }   // tap greyed → drop it from the multitransfer
             const p = workingSquad.find(x => x.id === id);
+            if (p && p.id < 0) { markTransferOut(p); return; }   // empty slot — jump straight into "fill this" mode
             if (p) openPlayerModal(p, true);
         }
 
@@ -521,14 +546,19 @@
             renderPitch();
             updatePredicted();
         }
-        // Which players can legally swap with `srcId`: only the opposite group
-        // (starter <-> bench) and only if the resulting XI stays legal.
+        // Which players can legally swap with `srcId`. Starter <-> bench swaps
+        // must keep the resulting XI legal. Bench <-> bench is always legal
+        // (it's just a reorder of who's next in line) so those are always offered.
         function computeSubEligible(srcId) {
             const src = workingSquad.find(p => p.id === srcId);
             const set = new Set();
             if (!src) return set;
             workingSquad.forEach(t => {
-                if (t.id === srcId || t.starting === src.starting) return;
+                if (t.id === srcId) return;
+                if (t.starting === src.starting) {
+                    if (!src.starting) set.add(t.id);   // bench <-> bench reorder
+                    return;
+                }
                 src.starting = !src.starting; t.starting = !t.starting;
                 if (isLegalXI(workingSquad)) set.add(t.id);
                 src.starting = !src.starting; t.starting = !t.starting;
@@ -579,8 +609,18 @@
                     `<button class="btn btn-sm btn-outline-primary pm-btn" id="pmSubBtn">Substitute</button>
                      <button class="btn btn-sm btn-outline-primary pm-btn" id="pmTransferBtn">Transfer</button>`;
                 if (p.starting) {
-                    document.getElementById('pmCap').onclick = () => { captainId = p.id; if (viceId === p.id) viceId = null; showResetBtn(); renderPitch(); updatePredicted(); closeModal(); };
-                    document.getElementById('pmVice').onclick = () => { viceId = p.id; if (captainId === p.id) captainId = null; renderPitch(); closeModal(); };
+                    document.getElementById('pmCap').onclick = () => {
+                        const oldCap = captainId;
+                        if (viceId === p.id) viceId = oldCap;   // was vice — swap, don't duplicate
+                        captainId = p.id;
+                        showResetBtn(); renderPitch(); updatePredicted(); closeModal();
+                    };
+                    document.getElementById('pmVice').onclick = () => {
+                        const oldVice = viceId;
+                        if (captainId === p.id) captainId = oldVice;   // was captain — swap, don't duplicate
+                        viceId = p.id;
+                        showResetBtn(); renderPitch(); updatePredicted(); closeModal();
+                    };
                 }
                 document.getElementById('pmSubBtn').onclick = () => startSub(p.id);
                 document.getElementById('pmTransferBtn').onclick = () => markTransferOut(p);
@@ -634,12 +674,15 @@
         function updateTransferBanner() {
             const banner = document.getElementById('transferBanner');
             if (!pendingOuts.length) { banner.classList.add('d-none'); return; }
-            const out = pendingOuts.find(o => o.id === activeOut) || pendingOuts[0];
             const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
-            const more = pendingOuts.length - 1;
-            banner.innerHTML = `Replacing <strong>${out.web_name}</strong> `
-                + `(\u00a3${(bank + out.cost).toFixed(1)}m to spend)`
-                + (more > 0 ? ` &mdash; ${more} more marked, tap a greyed player to switch. ` : `. `)
+            const totalBudget = bank + pendingOuts.reduce((s, o) => s + o.cost, 0);
+            const labels = pendingOuts.map(o => o.id < 0 ? o.pos : o.web_name);
+            const text = pendingOuts.length === 1
+                ? `Replacing <strong>${labels[0]}</strong>`
+                : `Replacing <strong>${pendingOuts.length}</strong> players (${labels.join(', ')})`;
+            banner.innerHTML = `${text} `
+                + `(\u00a3${totalBudget.toFixed(1)}m total to spend) `
+                + `&mdash; tap a highlighted player below to fill a slot, or tap a greyed player to drop it. `
                 + `<button id="transferCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel all</button>`;
             banner.classList.remove('d-none');
             document.getElementById('transferCancel').onclick = cancelTransfers;
@@ -647,44 +690,43 @@
         function markTransferOut(p) {
             closeModal();
             if (!pendingOuts.some(o => o.id === p.id)) pendingOuts.push(p);
-            activeOut = p.id;
             renderPitch();            // grey the player out straight away
             updateTransferBanner();
             ensurePlayers().then(() => playerSearch.refresh());
         }
         function cancelTransfers() {
             pendingOuts = [];
-            activeOut = null;
             document.getElementById('transferBanner').classList.add('d-none');
             playerSearch.refresh();
             renderPitch();
         }
         function removePendingOut(id) {
             pendingOuts = pendingOuts.filter(o => o.id !== id);
-            if (activeOut === id) activeOut = pendingOuts.length ? pendingOuts[0].id : null;
             updateTransferBanner();
             playerSearch.refresh();
             renderPitch();
         }
         function resolveTransfer(inp) {
-            const out = pendingOuts.find(o => o.id === activeOut);
+            // Match the incoming player's position to the right pending-out
+            // slot — several different positions can be queued at once, so
+            // it isn't necessarily "the most recently marked" one.
+            const out = pendingOuts.find(o => o.pos === inp.pos);
             if (!out) return;
-            performTransfer(out.id, inp);
+            if (!performTransfer(out.id, inp)) return;   // blocked (e.g. club limit) — keep it queued
             pendingOuts = pendingOuts.filter(o => o.id !== out.id);
-            activeOut = pendingOuts.length ? pendingOuts[0].id : null;
             updateTransferBanner();
             playerSearch.refresh();
             renderPitch();
         }
 
-        function activeOutPlayer() { return pendingOuts.find(o => o.id === activeOut) || null; }
-
-        // Predicted GW points, with the captain counting double. Recomputed
+        // Predicted GW points, with the captain counting double, minus any
+        // -4 hits from exceeding free transfers this session. Recomputed
         // client-side so captaincy / lineup / transfer changes stay in sync.
         function computePredicted() {
             if (!workingSquad) return null;
-            return +workingSquad.filter(p => p.starting)
-                .reduce((s, p) => s + (p.predicted || 0) * (p.id === captainId ? 2 : 1), 0).toFixed(1);
+            const raw = workingSquad.filter(p => p.starting)
+                .reduce((s, p) => s + (p.predicted || 0) * (p.id === captainId ? 2 : 1), 0);
+            return +(raw - transferHitPoints()).toFixed(1);
         }
         function updatePredicted() {
             if (teamView && teamView.gw) {
@@ -693,17 +735,22 @@
             }
         }
 
-        // Transfer a searched player in: let the user pick who to drop.
+        // Transfer a searched player in: let the user pick who to drop. Any
+        // OTHER players already marked for transfer-out (mid multi-transfer,
+        // not yet resolved) are left alone rather than wiped \u2014 they won't be
+        // left in the team either, so they're excluded from the incoming
+        // player's club-limit check too, and aren't offered as a second drop
+        // candidate for this same incoming player.
         function markTransferIn(inp) {
             if (!workingSquad) return;
             if (workingSquad.some(p => p.id === inp.id)) { alert('That player is already in your squad.'); return; }
             closeModal();
-            cancelTransfers();
+            const leaving = new Set(pendingOuts.map(o => o.id));
             tinEligible = new Set(workingSquad
-                .filter(p => p.pos === inp.pos
-                    && workingSquad.filter(x => x.team === inp.team && x.id !== p.id).length < 3)
+                .filter(p => p.pos === inp.pos && !leaving.has(p.id)
+                    && workingSquad.filter(x => x.team === inp.team && x.id !== p.id && !leaving.has(x.id)).length < 3)
                 .map(p => p.id));
-            if (!tinEligible.size) { alert(`No affordable ${inp.pos} to swap out for ${inp.web_name}.`); return; }
+            if (!tinEligible.size) { alert(`No eligible ${inp.pos} to swap out for ${inp.web_name}.`); return; }
             pendingIn = inp;
             const banner = document.getElementById('transferBanner');
             banner.innerHTML = `Transferring in <strong>${inp.web_name}</strong> \u2014 tap a highlighted player to swap out. `
@@ -715,19 +762,24 @@
         }
         function exitTransferInMode() {
             pendingIn = null; tinEligible = new Set();
-            document.getElementById('transferBanner').classList.add('d-none');
+            if (pendingOuts.length) { updateTransferBanner(); }   // restore the "Replacing X" banner if one was in progress
+            else { document.getElementById('transferBanner').classList.add('d-none'); }
             renderPitch();
         }
 
         function performTransfer(outId, inp) {
             const idx = workingSquad.findIndex(p => p.id === outId);
-            if (idx < 0) return;
-            // Enforce max 3 players from any single club.
-            if (workingSquad.filter(p => p.team === inp.team && p.id !== outId).length >= 3) {
+            if (idx < 0) return false;
+            // Enforce max 3 players from any single club, counting only players who
+            // will actually remain in the team — other slots already marked for
+            // transfer out (mid multi-transfer) don't count against the incoming club.
+            const leaving = new Set([...pendingOuts.map(o => o.id), outId]);
+            if (workingSquad.filter(p => p.team === inp.team && !leaving.has(p.id)).length >= 3) {
                 alert(`You can only have 3 players from one club.`);
-                return;
+                return false;
             }
             const old = workingSquad[idx];
+            if (old.id > 0) transfersUsed++;   // replacing an empty slot (initial pick) isn't a "transfer"
             if (teamView.gw) teamView.gw.bank = +((teamView.gw.bank || 0) - (inp.cost - old.cost)).toFixed(1);
             workingSquad[idx] = { ...inp, position: old.position, starting: old.starting,
                 is_captain: old.is_captain, is_vice_captain: old.is_vice_captain,
@@ -745,6 +797,7 @@
             updatePredicted();
             renderPitch();
             playerSearch.refresh();
+            return true;
         }
 
         // ---- Optimise / reset ----
@@ -776,7 +829,8 @@
             const vice = teamView.squad.find(p => p.is_vice_captain);
             captainId = cap ? cap.id : null;
             viceId = vice ? vice.id : null;
-            pendingOuts = []; activeOut = null;
+            pendingOuts = [];
+            transfersUsed = 0;
             document.getElementById('transferBanner').classList.add('d-none');
             if (teamView.header) teamView.header.value = +workingSquad.reduce((s, p) => s + (p.cost || 0), 0).toFixed(1);
             if (teamView._gw0) { teamView.gw = { ...teamView._gw0 }; }
@@ -816,10 +870,10 @@
             const bigGains = (teamView.transfer_recs || []).filter(r => r.rating_gain >= 5).length;
 
             const CHIPS = [
-                { key: 'wildcard', name: 'Wildcard', note: `Wildcard: unlimited free transfers this gameweek. ${bigGains} big upgrades available now.` },
-                { key: 'freehit', name: 'Free Hit', note: `Free Hit: change your whole team for one gameweek. Best for blank/double gameweeks.` },
                 { key: 'bboost', name: 'Bench Boost', note: `Bench Boost: your bench also scores. Bench projected ${benchPts} pts this gameweek.` },
-                { key: '3xc', name: 'Triple Captain', note: cap ? `Triple Captain: captain scores x3. ${cap.web_name} projected ${capPts} pts (x3 = ${(capPts * 3).toFixed(1)}).` : `Triple Captain: captain scores x3 \u2014 pick a strong captain first.` }
+                { key: '3xc', name: 'Triple Captain', note: cap ? `Triple Captain: captain scores x3. ${cap.web_name} projected ${capPts} pts (x3 = ${(capPts * 3).toFixed(1)}).` : `Triple Captain: captain scores x3 \u2014 pick a strong captain first.` },
+                { key: 'wildcard', name: 'Wildcard', note: `Wildcard: unlimited free transfers this gameweek. ${bigGains} big upgrades available now.` },
+                { key: 'freehit', name: 'Free Hit', note: `Free Hit: change your whole team for one gameweek. Best for blank/double gameweeks.` }
             ];
 
             bar.innerHTML = CHIPS.map(c => {
@@ -839,6 +893,10 @@
         // ---- Save team (persist the current squad + lineup locally) ----
         document.getElementById('saveTeamBtn').addEventListener('click', () => {
             if (!workingSquad || workingSquad.length !== 15) return;
+            if (workingSquad.some(p => p.id < 0)) {
+                alert('Fill every slot before saving — tap the remaining "+" slots to pick players.');
+                return;
+            }
             if (teamView.gw && teamView.gw.bank < 0) {
                 alert(`You're \u00a3${Math.abs(teamView.gw.bank).toFixed(1)}m over budget \u2014 sort your transfers before saving.`);
                 return;
@@ -896,6 +954,35 @@
         });
 
         // ---- Leagues (accordion: opening one closes the others) ----
+        // News list scrolls internally, capped to the leagues LIST's actual
+        // rendered height (not the whole leagues column — both columns have
+        // their own equal-height heading above the list, so matching the
+        // content divs is what makes the two column bottoms line up). A pure
+        // flex-stretch approach doesn't work here: stretch sizes the row to
+        // the TALLEST natural content, so nothing would ever need to scroll.
+        // Re-run whenever either column's height can change.
+        function syncNewsHeight() {
+            const leaguesSection = document.getElementById('leaguesSection');
+            const newsList = document.getElementById('newsList');
+            if (!leaguesSection || !newsList) return;
+            if (window.matchMedia('(min-width: 992px)').matches) {
+                // newsList's own top (not its heading's bottom — there's a
+                // margin gap between them) is a stable reference regardless of
+                // any height set on a previous call, since it's positioned by
+                // the content above it, not by its own size. getBoundingClientRect
+                // (not offsetHeight) so a child's bottom margin — e.g. the
+                // "No leagues found." <p> — is accounted for. A fixed height
+                // (not max-height) so the bottom lines up even when news has
+                // FEWER items than leagues has height for.
+                const contentHeight = leaguesSection.getBoundingClientRect().bottom
+                    - newsList.getBoundingClientRect().top;
+                newsList.style.height = Math.max(0, contentHeight) + 'px';
+            } else {
+                newsList.style.height = '';   // stacked on mobile — CSS media query caps it instead
+            }
+        }
+        window.addEventListener('resize', syncNewsHeight);
+
         function renderLeagues(groups) {
             const el = document.getElementById('leaguesList');
             groups = groups || {};
@@ -918,19 +1005,21 @@
                 row.querySelector('.league-name').addEventListener('click', () => toggleLeague(row));
                 row.querySelector('.league-caret').addEventListener('click', () => toggleLeague(row));
             });
+            syncNewsHeight();
         }
         function toggleLeague(row) {
             const box = row.querySelector('.league-standings');
             const isOpen = !box.classList.contains('d-none');
             document.querySelectorAll('.league-standings').forEach(b => { if (b !== box) b.classList.add('d-none'); });
-            if (isOpen) { box.classList.add('d-none'); return; }
-            if (box.dataset.loaded) { box.classList.remove('d-none'); return; }
+            if (isOpen) { box.classList.add('d-none'); syncNewsHeight(); return; }
+            if (box.dataset.loaded) { box.classList.remove('d-none'); syncNewsHeight(); return; }
             box.innerHTML = '<div class="text-muted small p-2">Loading\u2026</div>';
             box.classList.remove('d-none');
+            syncNewsHeight();
             fetch(`/api/league/${row.dataset.id}`)
                 .then(res => res.json())
                 .then(data => {
-                    if (!data.available) { box.innerHTML = '<div class="text-muted small p-2">Unavailable.</div>'; return; }
+                    if (!data.available) { box.innerHTML = '<div class="text-muted small p-2">Unavailable.</div>'; syncNewsHeight(); return; }
                     box.dataset.loaded = '1';
                     box.innerHTML = `<table class="table table-sm league-table mb-0"><tbody>${
                         data.standings.map(s => `<tr>
@@ -938,33 +1027,126 @@
                             <td>${s.entry_name}<div class="ls-manager">${s.manager}</div></td>
                             <td class="ls-total">${s.total}</td>
                         </tr>`).join('')}</tbody></table>`;
+                    syncNewsHeight();
                 });
         }
+
+        // ---- News feed (injury/transfer blurbs, straight from FPL's own data) ----
+        let newsLoaded = false;
+        function loadNews() {
+            if (newsLoaded) return;
+            newsLoaded = true;
+            const el = document.getElementById('newsList');
+            fetch('/api/news')
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.available || !data.stories.length) {
+                        el.innerHTML = '<p class="text-muted small mb-0">No injury or transfer news right now.</p>';
+                        return;
+                    }
+                    el.innerHTML = data.stories.map(s => `
+                        <div class="news-item">
+                            ${shirtImg(s.team_code, '', 'shirt-sm')}
+                            <div class="news-body">
+                                <div class="news-head">
+                                    <span class="news-who"><span class="news-player">${s.player}</span>
+                                        <span class="news-team">${s.team || ''}</span></span>
+                                    <span class="news-date">${s.date || ''}</span>
+                                </div>
+                                <div class="news-text">${s.headline}</div>
+                            </div>
+                        </div>`).join('');
+                    syncNewsHeight();
+                })
+                .catch(() => { el.innerHTML = '<p class="text-muted small mb-0">Couldn’t load news.</p>'; });
+        }
+
+        // ---- Underperforming players (actual returns vs xG/xGC) ----
+        let underperfLoaded = false;
+        let underperfData = [];
+        let underperfGroup = 'attackers';   // 'attackers' (MID/FWD, goals vs xG) or 'defenders' (GK/DEF, conceded vs xGC)
+        function renderUnderperfRows() {
+            const body = document.getElementById('underperfBody');
+            const rows = underperfData.filter(p =>
+                underperfGroup === 'attackers' ? (p.pos === 'MID' || p.pos === 'FWD') : (p.pos === 'DEF' || p.pos === 'GK'));
+            body.innerHTML = rows.length ? rows.map(p => `
+                <tr class="ps-row">
+                    <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span></td>
+                    <td>${p.pos}</td>
+                    <td>${p.team_name || ''}</td>
+                    <td>${p.metric}${p.season === 'last season' ? ' <span class="text-muted">(LS)</span>' : ''}</td>
+                    <td>${p.expected}</td>
+                    <td>${p.actual}</td>
+                    <td><span class="rating-badge underperf-diff">+${p.diff}</span></td>
+                    <td>£${p.cost != null ? p.cost.toFixed(1) : '–'}</td>
+                    <td><div class="player-gws">${miniFixtures(p)}</div></td>
+                </tr>`).join('')
+                : '<tr><td colspan="9" class="text-muted small p-2">No underperforming players found.</td></tr>';
+        }
+        function loadUnderperforming() {
+            if (underperfLoaded) { renderUnderperfRows(); return; }
+            underperfLoaded = true;
+            fetch('/api/underperforming')
+                .then(res => res.json())
+                .then(data => {
+                    underperfData = data.results || [];
+                    renderUnderperfRows();
+                })
+                .catch(() => {
+                    document.getElementById('underperfBody').innerHTML =
+                        '<tr><td colspan="9" class="text-muted small p-2">Couldn’t load this table.</td></tr>';
+                });
+        }
+        document.querySelectorAll('#underperfPosTabs .nav-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#underperfPosTabs .nav-link').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                underperfGroup = btn.dataset.group;
+                renderUnderperfRows();
+            });
+        });
+        document.querySelectorAll('#playersViewTabs .nav-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#playersViewTabs .nav-link').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const under = btn.dataset.view === 'underperforming';
+                document.getElementById('playersTabSearch').classList.toggle('d-none', under);
+                document.getElementById('underperformingView').classList.toggle('d-none', !under);
+                if (under) loadUnderperforming();
+            });
+        });
 
         // =====================================================================
         //  PLAYER POOL — builder, picker, shared filters
         // =====================================================================
-        function builtKey(id) { return `fpl_built_squad_${id || getSavedId() || 'none'}`; }        const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
+        function builtKey(id) { return `fpl_built_squad_${id || getSavedId() || 'none'}`; }
+        const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
         const BUDGET = 100.0;
-        const CLUB_LIMIT = 3;
         let allPlayers = null;
-        let builderPicked = [];
 
-        function getBuilt() { try { return JSON.parse(localStorage.getItem(builtKey())); } catch (e) { return null; } }        
+        function getBuilt() { try { return JSON.parse(localStorage.getItem(builtKey())); } catch (e) { return null; } }
         function ensurePlayers() {
             if (allPlayers) return Promise.resolve(allPlayers);
             return fetch('/api/all_players').then(r => r.json()).then(d => { allPlayers = d.players || []; return allPlayers; });
         }
-        function populateTeamSelect(sel) {
-            if (!allPlayers || sel.dataset.filled) return;
-            const names = [...new Set(allPlayers.map(p => p.team_name).filter(Boolean))].sort();
-            sel.insertAdjacentHTML('beforeend', names.map(n => `<option>${n}</option>`).join(''));
-            sel.dataset.filled = '1';
-        }
-        function priceBounds(which) {
-            const mn = parseFloat(document.getElementById(which + 'PriceMin').value);
-            const mx = parseFloat(document.getElementById(which + 'PriceMax').value);
-            return [Math.min(mn, mx), Math.max(mn, mx)];
+        // Empty starting squad (4-4-2, GK/DEF/MID/FWD bench) used to show the
+        // normal pitch view with "Add player" slots when there's nothing to load
+        // yet — replaces the old separate team-builder page.
+        function emptySquad() {
+            const rows = [
+                { pos: 'GK', starting: true }, { pos: 'GK', starting: false },
+                { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: false },
+                { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: false },
+                { pos: 'FWD', starting: true }, { pos: 'FWD', starting: true }, { pos: 'FWD', starting: false },
+            ];
+            let startN = 0, benchN = 0;
+            return rows.map((r, i) => ({
+                id: -(i + 1), web_name: '', pos: r.pos, team: null, team_code: null,
+                cost: 0, rating: 0, predicted: 0, form: null, status: 'a', news: '',
+                next_gameweeks: [], starting: r.starting,
+                position: r.starting ? ++startN : 11 + (++benchN),
+                is_captain: false, is_vice_captain: false, multiplier: 1,
+            }));
         }
         function setupPriceRange(which, onChange) {
             const min = document.getElementById(which + 'PriceMin');
@@ -989,22 +1171,6 @@
             max.addEventListener('input', () => upd(true));
             upd(false);
         }
-        function filterPlayers(list, q, pos, team, priceMin, priceMax) {
-            return list.filter(p =>
-                (pos === 'All' || p.pos === pos) &&
-                (team === 'All' || p.team_name === team) &&
-                p.cost >= priceMin && p.cost <= priceMax &&
-                (!q || p.web_name.toLowerCase().includes(q)));
-        }
-        function playerCells(p) {
-            return `${shirtImg(p.team_code, p.pos, 'shirt-sm')}
-                <span class="br-name">${p.web_name}</span>
-                <span class="br-pos">${p.pos}</span>
-                <span class="br-team">${p.team_name || ''}</span>
-                <span class="br-rating">${Math.round(p.rating)}</span>
-                <span class="br-cost">\u00a3${p.cost.toFixed(1)}</span>`;
-        }
-
         // ---- Reusable player search (sortable table + filters) ----
         function createPlayerSearch(cfg) {
             const c = cfg.container;
@@ -1151,17 +1317,23 @@
             container: document.getElementById('playerSearch'),
             sliderPrefix: 'ps',
             pool: () => allPlayers || [],
-            isTransferMode: () => activeOut != null,
+            isTransferMode: () => pendingOuts.length > 0,
             transferCandidate: (p) => {
-                const out = activeOutPlayer();
-                if (!out) return true;
+                if (!pendingOuts.length) return true;
+                // Any pending-out's position is fair game at once — e.g. mark a
+                // DEF and a MID out, and both DEF and MID candidates show up
+                // together, not just whichever was marked most recently.
+                const positions = new Set(pendingOuts.map(o => o.pos));
+                if (!positions.has(p.pos)) return false;
                 const ownedIds = new Set(workingSquad.map(x => x.id));
-                return p.pos === out.pos && !ownedIds.has(p.id);
+                return !ownedIds.has(p.id);
             },
             rowDisabled: (p) => {
-                const out = activeOutPlayer();
-                if (!out) return false;
-                return workingSquad.filter(x => x.team === p.team && x.id !== out.id).length >= 3;
+                if (!pendingOuts.length) return false;
+                // Other slots already marked for transfer out don't count against the
+                // club limit — they won't be left in the team once resolved.
+                const leaving = new Set(pendingOuts.map(o => o.id));
+                return workingSquad.filter(x => x.team === p.team && !leaving.has(x.id)).length >= 3;
             },
             onTransfer: (p) => resolveTransfer(p),
             onBrowse: (p) => {
@@ -1184,118 +1356,9 @@
             }
         });
 
-        // ---- Team builder ----
-        function openBuilder() {
-            document.getElementById('teamUnavailable').classList.add('d-none');
-            document.getElementById('teamBody').classList.add('d-none');
-            document.getElementById('teamBuilder').classList.remove('d-none');
-            ensurePlayers().then(() => {
-                populateTeamSelect(document.getElementById('builderTeam'));
-                builderPicked = (getBuilt() || []).map(p => ({ ...p }));
-                document.getElementById('builderSearch').value = '';
-                document.getElementById('builderSearchClear').style.display = 'none';
-                document.getElementById('builderPos').value = 'All';
-                document.getElementById('builderTeam').value = 'All';
-                document.getElementById('builderPriceMin').value = 3.5;
-                document.getElementById('builderPriceMax').value = 17;
-                document.getElementById('builderPriceMin').dispatchEvent(new Event('input'));
-                renderBuilder();
-            });
-        }
-        function builderCounts() { const c = { GK: 0, DEF: 0, MID: 0, FWD: 0 }; builderPicked.forEach(p => c[p.pos]++); return c; }
-        function builderSpent() { return builderPicked.reduce((s, p) => s + p.cost, 0); }
-        function clubCount(teamId) { return builderPicked.filter(p => p.team === teamId).length; }
-
-        function renderBuilder() {
-            const counts = builderCounts();
-            const remaining = +(BUDGET - builderSpent()).toFixed(1);
-            const valid = builderPicked.length === 15
-                && Object.keys(SQUAD_REQ).every(k => counts[k] === SQUAD_REQ[k]) && remaining >= 0;
-            document.getElementById('builderBudget').textContent = `\u00a3${remaining.toFixed(1)}m left`;
-            document.getElementById('builderCount').textContent = `${builderPicked.length}/15 picked`;
-            document.getElementById('builderSave').disabled = !valid;
-
-            const squadEl = document.getElementById('builderSquad');
-            squadEl.innerHTML = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
-                const inPos = builderPicked.filter(p => p.pos === pos);
-                const slots = inPos.map(p => `
-                    <div class="builder-slot">
-                        ${shirtImg(p.team_code, p.pos, 'shirt-sm')}
-                        <span class="bs-name">${p.web_name}</span>
-                        <span class="bs-cost">\u00a3${p.cost.toFixed(1)}</span>
-                        <button class="bs-remove" data-id="${p.id}">&times;</button>
-                    </div>`).join('');
-                const empty = Math.max(0, SQUAD_REQ[pos] - inPos.length);
-                const placeholders = Array(empty).fill('<div class="builder-slot empty">empty</div>').join('');
-                return `<div class="builder-pos-group">
-                    <div class="builder-pos-label">${pos} ${inPos.length}/${SQUAD_REQ[pos]}</div>
-                    ${slots}${placeholders}</div>`;
-            }).join('');
-            squadEl.querySelectorAll('.bs-remove').forEach(btn =>
-                btn.addEventListener('click', () => {
-                    builderPicked = builderPicked.filter(p => p.id !== +btn.dataset.id);
-                    renderBuilder();
-                }));
-            renderBuilderList();
-        }
-
-        function renderBuilderList() {
-            if (!allPlayers) return;
-            const q = document.getElementById('builderSearch').value.trim().toLowerCase();
-            const counts = builderCounts();
-            const remaining = +(BUDGET - builderSpent()).toFixed(1);
-            const pickedIds = new Set(builderPicked.map(p => p.id));
-            const bpr = priceBounds('builder');
-            let list = filterPlayers(allPlayers, q,
-                document.getElementById('builderPos').value,
-                document.getElementById('builderTeam').value,
-                bpr[0], bpr[1]).filter(p => !pickedIds.has(p.id));
-            list.sort((a, b) => b.rating - a.rating);
-            list = list.slice(0, 80);
-
-            const el = document.getElementById('builderList');
-            el.innerHTML = list.map(p => {
-                const full = counts[p.pos] >= SQUAD_REQ[p.pos];
-                const tooPricey = p.cost > remaining;
-                const clubFull = clubCount(p.team) >= CLUB_LIMIT;
-                const disabled = full || tooPricey || clubFull || builderPicked.length >= 15;
-                const why = full ? `${p.pos} full` : clubFull ? '3/club' : tooPricey ? 'too pricey' : 'add';
-                return `<div class="builder-row">${playerCells(p)}
-                    <button class="btn btn-sm btn-primary br-add" data-id="${p.id}" ${disabled ? 'disabled' : ''}>${why}</button>
-                </div>`;
-            }).join('') || '<p class="text-muted small p-2">No players match.</p>';
-            el.querySelectorAll('.br-add').forEach(btn =>
-                btn.addEventListener('click', () => {
-                    const p = allPlayers.find(x => x.id === +btn.dataset.id);
-                    if (p) { builderPicked.push({ ...p }); renderBuilder(); }
-                }));
-        }
-
-        document.getElementById('builderSearch').addEventListener('input', renderBuilderList);
-        document.getElementById('builderPos').addEventListener('change', renderBuilderList);
-        document.getElementById('builderTeam').addEventListener('change', renderBuilderList);
-        setupPriceRange('builder', renderBuilderList);
-        wireClear(document.getElementById('builderSearch'), document.getElementById('builderSearchClear'), renderBuilderList);
-        document.getElementById('builderReset').addEventListener('click', () => {
-            document.getElementById('builderSearch').value = '';
-            document.getElementById('builderSearchClear').style.display = 'none';
-            document.getElementById('builderPos').value = 'All';
-            document.getElementById('builderTeam').value = 'All';
-            document.getElementById('builderPriceMin').value = 3.5;
-            document.getElementById('builderPriceMax').value = 17;
-            document.getElementById('builderPriceMin').dispatchEvent(new Event('input'));
-        });
-        document.getElementById('builderClear').addEventListener('click', () => { builderPicked = []; renderBuilder(); });
-        document.getElementById('builderCancel').addEventListener('click', () => {
-            document.getElementById('teamBuilder').classList.add('d-none');
-            loadTeam();
-        });
-        document.getElementById('builderSave').addEventListener('click', () => {
-            localStorage.setItem(builtKey(), JSON.stringify(builderPicked));            
-            document.getElementById('teamBuilder').classList.add('d-none');
-            showBuiltTeam(builderPicked, teamView ? teamView.leagues : {});
-        });
-        // (Draft editing is now done directly via the pitch / transfers.)
+        // (Building a squad is now done directly on the pitch: empty slots are
+        // filled via the same transfer-in flow used for swaps, then "Save team"
+        // persists it \u2014 see emptySquad() / saveTeamBtn.)
 
         // ---- Client-side optimise / transfers for a built team ----
         function optimiseSquad(squad) {
@@ -1377,15 +1440,19 @@
             const spent = +squad.reduce((s, p) => s + p.cost, 0).toFixed(1);
             const bank = +(BUDGET - spent).toFixed(1);
             const predGw = +squad.filter(p => p.starting).reduce((s, p) => s + p.predicted * (p.is_captain ? 2 : 1), 0).toFixed(1);
+            // Still has empty slots — suppress optimise/recommendation noise
+            // built for a complete squad; filling slots is done via the pitch.
+            const isBuilding = squad.some(p => p.id < 0);
             renderTeam({
                 available: true, built: true,
-                header: { name: 'Draft XI', manager: 'Built locally', value: spent, bank: bank },
+                header: { name: isBuilding ? 'Pick your squad' : 'Draft XI', manager: 'Built locally', value: spent, bank: bank },
                 gw: { event: null, points: null, predicted_points: predGw, bank: bank, value: spent,
                       chips_available: ['wildcard', 'freehit', 'bboost', '3xc'] },
                 squad: squad,
-                recommended: { captain: capId, vice: vId },
-                optimised: optimiseSquad(squad),
-                transfer_recs: computeTransfers(squad, allPlayers, bank, 15),
+                recommended: isBuilding ? { captain: null, vice: null } : { captain: capId, vice: vId },
+                optimised: isBuilding ? null : optimiseSquad(squad),
+                // Preseason/draft = unlimited transfers, so nothing is a hit here.
+                transfer_recs: isBuilding ? [] : computeTransfers(squad, allPlayers, bank, Infinity),
                 leagues: leagues || {}, current_event: null, min_event: 1
             });
         }
@@ -1604,14 +1671,10 @@
         });
 
         // ---- Initial load ----
-        const id = getSavedId();
-        if (!id) {
-            showPrompt();
-        } else if (getBuilt() && getBuilt().length === 15) {
-            ensurePlayers().then(() => showBuiltTeam(getBuilt(), {}));
-        } else {
-            loadTeam();
-        }
+        if (getSavedId()) loadTeam(); else showPrompt();
+        ensurePlayers().then(() => playersTabSearch.refresh());
+        loadRotation();
+        loadNews();
     </script>
 
 </body>
