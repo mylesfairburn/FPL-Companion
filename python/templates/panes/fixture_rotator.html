@@ -1,0 +1,19 @@
+        <!-- ============ FIXTURE ROTATOR ============ -->
+        <div id="pane-rotator" class="tab-pane d-none">
+            <ul class="nav nav-pills mb-3" id="rotationTabs">
+                <li class="nav-item"><button class="nav-link active" data-category="defender">Defenders</button></li>
+                <li class="nav-item"><button class="nav-link" data-category="attacker">Attackers</button></li>
+            </ul>
+
+            <h6 class="section-heading">Best rotation partners</h6>
+            <div id="pairsContainer" class="mb-4"></div>
+
+            <h6 class="section-heading">Full fixture list</h6>
+            <p class="text-muted small">Click a team to highlight and pin it to the top.</p>
+            <div class="table-responsive">
+                <table class="table table-sm rotation-table" id="rotationTable">
+                    <thead><tr id="rotationHeader"></tr></thead>
+                    <tbody id="rotationBody"></tbody>
+                </table>
+            </div>
+        </div>

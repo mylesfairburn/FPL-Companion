@@ -1,0 +1,18 @@
+services:
+  app:
+    image: ghcr.io/mylesfairburn/fpl-companion:latest
+    container_name: fpl-companion
+    restart: unless-stopped
+    # Bound to localhost: the reverse proxy terminates TLS and is the only
+    # thing that should be able to reach /api/refresh from outside.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # SQLite must outlive the image. NOT /app/data - that would shadow the
+      # CSVs baked into the image.
+      - /srv/fpl-companion/state:/app/state
+    environment:
+      FPL_DB_PATH: /app/state/fpl_companion.db
+      # openssl rand -hex 32 > /srv/fpl-companion/refresh_token
+      FPL_REFRESH_TOKEN: ${FPL_REFRESH_TOKEN:?set this, or /api/refresh stays open}
+      FPL_APP_URL: http://127.0.0.1:8000

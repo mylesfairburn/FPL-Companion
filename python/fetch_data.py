@@ -5,33 +5,99 @@ import time
 import pandas as pd
 import requests
 
+import seasons
 
-def get_bootstrap_data(cache_path='../data/raw/players_full.csv'):
-    """All players, teams, positions, and season totals in one call.
-    Falls back to the cached CSV if the API is unavailable."""
+BASE = "https://fantasy.premierleague.com/api"
+
+
+def get_bootstrap_data(cache_path=None, season=None):
+    """All players, teams, positions and season totals in one call.
+
+    ALWAYS returns a dict shaped like the API response ('elements', 'teams',
+    'element_types', 'events'). It used to return a DataFrame on the fallback
+    path, which meant every caller doing `data['elements']` died with a
+    KeyError the moment the FPL API was unreachable - taking down app startup
+    and any scheduled job with it, precisely when you'd want them to degrade
+    quietly instead.
+
+    Three tiers: live API, then the whole cached JSON payload, then a dict
+    rebuilt from the individual CSVs (which is all older caches have).
+    """
+    season = season or seasons.current_season()
+    json_cache = seasons.bootstrap_path(season)
+
     try:
-        response = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/")
+        response = requests.get(f"{BASE}/bootstrap-static/", timeout=20)
         response.raise_for_status()
         data = response.json()
-        pd.DataFrame(data['elements']).to_csv(cache_path, index=False)
-        return data
-    except requests.exceptions.RequestException:
-        print("API unavailable, falling back to cached data")
-        return pd.read_csv(cache_path)
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"Bootstrap API unavailable ({e}); using cached copy")
+        return _cached_bootstrap(season, json_cache)
+
+    # Cache the payload whole AND keep the per-table CSVs the rest of the
+    # project reads directly.
+    try:
+        os.makedirs(os.path.dirname(json_cache), exist_ok=True)
+        with open(json_cache, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        if data.get("elements"):
+            pd.DataFrame(data["elements"]).to_csv(
+                cache_path or seasons.players_path(season, create_dir=True), index=False)
+        if data.get("teams"):
+            pd.DataFrame(data["teams"]).to_csv(seasons.teams_path(season), index=False)
+        if data.get("element_types"):
+            os.makedirs(os.path.dirname(seasons.positions_path()), exist_ok=True)
+            pd.DataFrame(data["element_types"])[["id", "singular_name"]].to_csv(
+                seasons.positions_path(), index=False)
+    except OSError as e:
+        print(f"Couldn't write bootstrap cache: {e}")
+
+    return data
 
 
-def get_fixtures(cache_path='../data/raw/fixtures.csv'):
+def _cached_bootstrap(season, json_cache):
+    """Offline reconstruction of the bootstrap dict."""
+    if os.path.exists(json_cache):
+        try:
+            with open(json_cache, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"Bootstrap cache unreadable ({e}); falling back to CSVs")
+
+    # No JSON cache (or it's corrupt) - rebuild the tables we do have. Callers
+    # that only need elements/teams/element_types work fine off this; `events`
+    # is absent, which the season clock already treats as "can't tell".
+    data = {}
+    for key, path in (("elements", seasons.players_path(season)),
+                      ("teams", seasons.teams_path(season)),
+                      ("element_types", seasons.positions_path())):
+        try:
+            data[key] = pd.read_csv(path).to_dict("records")
+        except (FileNotFoundError, OSError, pd.errors.EmptyDataError):
+            data[key] = []
+    if not data["elements"]:
+        print("WARNING: no cached player data available - the app cannot rate players.")
+    return data
+
+
+def get_fixtures(cache_path=None, season=None):
     """All fixtures for the season - past and upcoming, with FPL's own
     difficulty ratings per team. Falls back to cache if the API is down."""
+    season = season or seasons.current_season()
+    cache_path = cache_path or seasons.fixtures_path(season, create_dir=True)
     try:
-        response = requests.get("https://fantasy.premierleague.com/api/fixtures/")
+        response = requests.get(f"{BASE}/fixtures/", timeout=20)
         response.raise_for_status()
-        data = response.json()
-        pd.DataFrame(data).to_csv(cache_path, index=False)
-        return pd.DataFrame(data)
-    except requests.exceptions.RequestException:
-        print("API unavailable, falling back to cached fixtures")
-        return pd.read_csv(cache_path)
+        df = pd.DataFrame(response.json())
+        df.to_csv(cache_path, index=False)
+        return df
+    except (requests.exceptions.RequestException, ValueError):
+        print("Fixtures API unavailable, falling back to cached fixtures")
+        try:
+            return pd.read_csv(cache_path)
+        except (FileNotFoundError, OSError, pd.errors.EmptyDataError):
+            print("No cached fixtures either - returning empty.")
+            return pd.DataFrame()
 
 
 def get_my_team(team_id, event_id, cache_path=None):
@@ -41,37 +107,42 @@ def get_my_team(team_id, event_id, cache_path=None):
     Public data, no login needed, unless the manager has set their team to
     private. Picks for a gameweek only exist once that gameweek has started -
     there's nothing to fetch before the season's first deadline."""
-    cache_path = cache_path or f'../data/raw/my_team_gw{event_id}.csv'
+    cache_path = cache_path or seasons.season_file(
+        f"my_team_gw{event_id}.csv", create_dir=True)
     try:
-        url = f"https://fantasy.premierleague.com/api/entry/{team_id}/event/{event_id}/picks/"
-        response = requests.get(url)
+        url = f"{BASE}/entry/{team_id}/event/{event_id}/picks/"
+        response = requests.get(url, timeout=20)
         response.raise_for_status()
-        data = response.json()
-        picks = pd.DataFrame(data['picks'])
+        picks = pd.DataFrame(response.json()["picks"])
         picks.to_csv(cache_path, index=False)
         return picks
-    except requests.exceptions.RequestException:
+    except (requests.exceptions.RequestException, ValueError, KeyError):
         print("API unavailable, falling back to cached team")
-        return pd.read_csv(cache_path)
+        try:
+            return pd.read_csv(cache_path)
+        except (FileNotFoundError, OSError):
+            return pd.DataFrame()
 
 
-def get_previous_season_fixture_strength(
-    fixtures_path='../data/raw/previous_season_fixtures.csv',
-    teams_path='../data/raw/previous_season_teams.csv',
-):
-    """Real attack/defence strength per team, computed from last season's
-    actual match results (goals scored/conceded) rather than a single Elo
+def get_previous_season_fixture_strength(fixtures_path=None, teams_path=None, season=None):
+    """Real attack/defence strength per team, computed from a completed
+    season's actual results (goals scored/conceded) rather than a single Elo
     figure. Genuinely distinct attack vs defence numbers, and uses FPL's own
     short_name convention throughout - no external name-mapping needed."""
+    season = season or seasons.previous_season() or seasons.FIRST_TRAINING_SEASON
+    fixtures_path = fixtures_path or seasons.fixtures_path(season)
+    teams_path = teams_path or seasons.teams_path(season)
 
     try:
         fixtures = pd.read_csv(fixtures_path)
         teams = pd.read_csv(teams_path)
-    except FileNotFoundError:
-        fixtures_url = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data/2025-26/fixtures.csv"
-        teams_url = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data/2025-26/teams.csv"
-        fixtures = pd.read_csv(fixtures_url)
-        teams = pd.read_csv(teams_url)
+    except (FileNotFoundError, OSError):
+        start = seasons.season_start_year(season)
+        tag = f"{start}-{str(start + 1)[2:]}"
+        base = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
+        fixtures = pd.read_csv(f"{base}/{tag}/fixtures.csv")
+        teams = pd.read_csv(f"{base}/{tag}/teams.csv")
+        os.makedirs(os.path.dirname(fixtures_path), exist_ok=True)
         fixtures.to_csv(fixtures_path, index=False)
         teams.to_csv(teams_path, index=False)
 
@@ -98,21 +169,31 @@ def get_previous_season_fixture_strength(
     return strength.reset_index(drop=True)
 
 
-def get_clubelo_ratings(cache_path='../data/raw/clubelo_ratings.csv'):
+def get_clubelo_ratings(cache_path=None, on_date=None):
     """Current Elo rating for every club, from clubelo.com. Unlike FPL's own
     team strength fields, Elo carries over between seasons rather than
     resetting to 0 - usable as a strength proxy before the new season's
-    matches have generated FPL's own numbers."""
+    matches have generated FPL's own numbers.
+
+    The date is today's by default rather than a pinned string: a hardcoded
+    date silently goes stale and starts returning last year's ratings."""
+    from datetime import date as _date
+    cache_path = cache_path or seasons.clubelo_path()
+    on_date = on_date or _date.today().isoformat()
     try:
-        response = requests.get("http://api.clubelo.com/2026-07-23")
+        response = requests.get(f"http://api.clubelo.com/{on_date}", timeout=20)
         response.raise_for_status()
         from io import StringIO
         data = pd.read_csv(StringIO(response.text))
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         data.to_csv(cache_path, index=False)
         return data
-    except requests.exceptions.RequestException:
+    except (requests.exceptions.RequestException, ValueError):
         print("ClubElo unavailable, falling back to cached ratings")
-        return pd.read_csv(cache_path)
+        try:
+            return pd.read_csv(cache_path)
+        except (FileNotFoundError, OSError):
+            return pd.DataFrame()
 
 
 # ClubElo uses its own naming convention - map to FPL's short_name per team.
@@ -123,54 +204,79 @@ CLUBELO_NAME_MAP = {
     'Everton': 'EVE', 'Fulham': 'FUL', 'Hull': 'HUL', 'Ipswich': 'IPS',
     'Leeds': 'LEE', 'Liverpool': 'LIV', 'Man City': 'MCI', 'Man United': 'MUN',
     'Newcastle': 'NEW', 'Forest': 'NFO', 'Sunderland': 'SUN', 'Tottenham': 'TOT',
+    'Burnley': 'BUR', 'Wolves': 'WOL', 'West Ham': 'WHU',
 }
 
 
-def get_player_history(player_id, cache_dir='../data/raw/gameweek_history'):
-    """Gameweek-by-gameweek history for a single player. Falls back to a local
-    cached copy if the API is unavailable (e.g. during the summer reset)."""
+def get_player_history(player_id, cache_dir=None, season=None):
+    """Gameweek-by-gameweek history for a single player.
+
+    Cached under the CURRENT season's directory - a completed season's data is
+    never written to, so last season's training set can't be overwritten by a
+    live fetch."""
+    cache_dir = cache_dir or seasons.element_summaries_dir(season, create=True)
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = f"{cache_dir}/{player_id}.json"
 
     try:
-        url = f"https://fantasy.premierleague.com/api/element-summary/{player_id}/"
-        response = requests.get(url)
+        response = requests.get(f"{BASE}/element-summary/{player_id}/", timeout=20)
         response.raise_for_status()
         data = response.json()
-
-        with open(cache_path, 'w') as f:
+        with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
-
         return data
-
-    except requests.exceptions.RequestException:
+    except (requests.exceptions.RequestException, ValueError):
         if os.path.exists(cache_path):
-            print(f"API unavailable for player {player_id}, using cached copy")
-            with open(cache_path) as f:
+            with open(cache_path, encoding='utf-8') as f:
                 return json.load(f)
-        else:
-            print(f"API unavailable for player {player_id}, no cache exists - skipping")
-            return None
+        return None
 
 
-def get_all_gameweek_history(player_ids):
-    """Pulls gameweek-by-gameweek history for every player ID given, returns one combined DataFrame."""
+def get_all_gameweek_history(player_ids, season=None, polite_delay=0.3, progress_every=100):
+    """Per-gameweek history for every player id given, as one DataFrame.
+
+    Slow by design (one API call per player, ~700 of them), so this belongs in
+    the nightly job, not in app startup or a request path."""
     all_history = []
+    ids = list(player_ids)
 
-    for player_id in player_ids:
-        data = get_player_history(player_id)
-
+    for n, player_id in enumerate(ids, start=1):
+        data = get_player_history(player_id, season=season)
         if data is None:
-            continue  # already logged inside get_player_history
-
-        history = pd.DataFrame(data['history'])
+            continue
+        history = pd.DataFrame(data.get('history', []))
+        if history.empty:
+            continue
         history['player_id'] = player_id
         all_history.append(history)
-
-        time.sleep(0.3)  # be polite to the API, avoid hammering it 620 times in a row
+        if progress_every and n % progress_every == 0:
+            print(f"  gameweek history: {n}/{len(ids)} players", flush=True)
+        time.sleep(polite_delay)  # be polite to the API
 
     if not all_history:
-        print("No data retrieved for any player.")
+        print("No gameweek history retrieved (season may not have started yet).")
         return pd.DataFrame()
 
     return pd.concat(all_history, ignore_index=True)
+
+
+def refresh_gameweek_stats(player_ids, season=None):
+    """Pull the current season's per-gameweek rows and write them to THIS
+    season's gameweek_stats.csv.
+
+    This is the file 'inseason' ratings are built from. It previously had two
+    problems: nothing ever called the code that wrote it, and the writer used a
+    repo-root-relative path while the reader used a python/-relative one, so
+    even when it did run the reader couldn't find it. Both are fixed by going
+    through seasons.gameweek_stats_path().
+    """
+    season = season or seasons.current_season()
+    df = get_all_gameweek_history(player_ids, season=season)
+    if df.empty:
+        return {"written": False, "rows": 0, "season": season,
+                "detail": "no gameweek history available yet"}
+    path = seasons.gameweek_stats_path(season, create_dir=True)
+    df.to_csv(path, index=False)
+    rounds = sorted(df['round'].dropna().unique()) if 'round' in df.columns else []
+    return {"written": True, "rows": len(df), "season": season, "path": path,
+            "gameweeks": [int(r) for r in rounds]}

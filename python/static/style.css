@@ -12,12 +12,13 @@ body { background-color: #ffffff; }
 }
 .btn-primary:hover { background-color: var(--accent-dark) !important; }
 .nav-pills .nav-link, .nav-tabs .nav-link { color: var(--accent-dark); }
-#modeToggle {
+/* Navbar action button (Change ID) — sits where the old mode toggle did */
+#changeId {
     background-color: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.5);
     color: #ffffff;
 }
-#modeToggle:hover { background-color: rgba(255,255,255,0.3); }
+#changeId:hover { background-color: rgba(255,255,255,0.3); }
 .rating-badge {
     background-color: var(--accent);
     color: #ffffff;
@@ -136,7 +137,7 @@ table th { color: var(--accent-dark); }
     .container { padding-left: 10px; padding-right: 10px; }
 
     .navbar-brand { font-size: 1.05rem; }
-    #modeToggle { font-size: 0.72rem; padding: 2px 8px; }
+    #changeId { font-size: 0.72rem; padding: 2px 8px; }
     .nav-tabs .nav-link, .nav-pills .nav-link { font-size: 0.82rem; padding: 4px 8px; }
 
     /* Players table */
@@ -945,4 +946,335 @@ table th { color: var(--accent-dark); }
     .chip-card-name { font-size: 0.6rem; }
     .chip-status { font-size: 0.52rem; }
     .chip-card { padding: 4px 3px; }
+}
+
+/* ============================================================
+   v18 (brand mark, footer, inline chip info, news stamps,
+        tables that don't drag sideways on a phone)
+   ============================================================ */
+
+/* --- App icon in the navbar --- */
+.navbar-brand.brand { display: inline-flex; align-items: center; gap: 8px; }
+.brand-icon {
+    width: 30px; height: 30px; border-radius: 7px; object-fit: cover;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+
+/* --- Footer ---
+   Sticky-footer layout: body is a full-height column, and the footer's auto
+   top margin eats the leftover space, so on a short page (the FPL ID prompt,
+   an error state) it sits on the bottom of the screen instead of floating
+   mid-page with white space under it. On a long page the auto margin resolves
+   to 0 and it just follows the content as normal.
+   The player modal and tooltips are position:fixed, so they're out of flow and
+   never become flex items here. */
+body {
+    min-height: 100vh;
+    min-height: 100dvh;   /* ignores mobile browser chrome that comes and goes */
+    display: flex;
+    flex-direction: column;
+}
+.navbar, .site-footer { flex-shrink: 0; }
+
+.site-footer {
+    border-top: 1px solid #eee;
+    background: #faf9fe;
+    padding: 18px 0 22px;
+    margin-top: auto;
+}
+.footer-inner {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: 10px 18px;
+}
+.footer-brand {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 700; color: var(--accent-dark);
+}
+.footer-icon { width: 24px; height: 24px; border-radius: 6px; object-fit: cover; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.footer-links a {
+    color: var(--accent-dark); font-size: 0.82rem; font-weight: 500; text-decoration: none;
+}
+.footer-links a:hover { color: var(--accent); text-decoration: underline; }
+.footer-note {
+    font-size: 0.68rem; color: #999; margin: 10px 0 0; line-height: 1.5; max-width: 720px;
+}
+
+/* --- Chip explanation, inline under the chips row (mobile) --- */
+.chips-bar { margin-bottom: 8px; }
+.chip-info {
+    background: #f5f3fc; border: 1px solid #e3d9f7; border-radius: 10px;
+    padding: 8px 10px; margin-bottom: 8px;
+    font-size: 0.78rem; line-height: 1.35; color: var(--accent-dark);
+}
+/* Wide screens keep the floating tooltip — there's room beside the chip there,
+   and the panel would push the pitch down on every hover. */
+@media (min-width: 768px) { .chip-info { display: none; } }
+
+/* --- News feed heading row + refresh --- */
+.news-head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.news-updated { font-size: 0.66rem; color: #aaa; margin-left: auto; white-space: nowrap; }
+.news-refresh {
+    border: none; background: none; color: var(--accent);
+    font-size: 1rem; line-height: 1; padding: 0 2px; cursor: pointer;
+}
+.news-refresh:hover { color: var(--accent-dark); }
+.news-refresh.spinning { animation: news-spin 0.8s linear infinite; }
+@keyframes news-spin { to { transform: rotate(360deg); } }
+
+/* --- Scroll containers: no rubber-banding out into the page --- */
+.ps-list, .table-responsive { overscroll-behavior-x: contain; }
+
+@media (max-width: 575.98px) {
+    /* Player tables fit the phone's width instead of scrolling sideways inside
+       their own box — that inner horizontal drag is what makes the table feel
+       loose while you're trying to scroll the page past it. Team drops out (the
+       shirt already identifies the club) to buy back the room, and the
+       remaining widths are re-shared so nothing is clipped. touch-action:pan-y
+       makes the table ignore sideways gestures entirely. */
+    .ps-list { overflow-x: hidden; touch-action: pan-y; }
+    .ps-table, .underperf-table { min-width: 0; width: 100%; }
+
+    .ps-table th:nth-child(3), .ps-table td:nth-child(3) { display: none; }   /* Team */
+    .ps-table th:nth-child(1), .ps-table td:nth-child(1) { width: 33%; }      /* Player */
+    .ps-table th:nth-child(2), .ps-table td:nth-child(2) { width: 10%; }      /* Pos */
+    .ps-table th:nth-child(4), .ps-table td:nth-child(4) { width: 13%; }      /* Form */
+    .ps-table th:nth-child(5), .ps-table td:nth-child(5) { width: 15%; }      /* Rtg */
+    .ps-table th:nth-child(6), .ps-table td:nth-child(6) { width: 12%; }      /* £m */
+    .ps-table th:nth-child(7), .ps-table td:nth-child(7) { width: 17%; }      /* Next 3 */
+
+    /* Same treatment for the underperforming table. Metric goes too: the
+       Attackers/Defenders pill above it already says which metric it is. */
+    .underperf-table th:nth-child(3), .underperf-table td:nth-child(3),
+    .underperf-table th:nth-child(4), .underperf-table td:nth-child(4) { display: none; }
+    .underperf-table th:nth-child(1), .underperf-table td:nth-child(1) { width: 27%; }   /* Player */
+    .underperf-table th:nth-child(2), .underperf-table td:nth-child(2) { width: 10%; }   /* Pos */
+    .underperf-table th:nth-child(5), .underperf-table td:nth-child(5) { width: 13%; }   /* Expected */
+    .underperf-table th:nth-child(6), .underperf-table td:nth-child(6) { width: 12%; }   /* Actual */
+    .underperf-table th:nth-child(7), .underperf-table td:nth-child(7) { width: 13%; }   /* Diff */
+    .underperf-table th:nth-child(8), .underperf-table td:nth-child(8) { width: 11%; }   /* £m */
+    .underperf-table th:nth-child(9), .underperf-table td:nth-child(9) { width: 14%; }   /* Next 3 */
+
+    /* Nested rows (leagues + news) reset --bs-gutter-x to Bootstrap's 1.5rem
+       default, so their negative margins overshot the 0.5rem padding on the
+       column holding them and pushed the page a couple of px wider than the
+       screen — enough to make the whole page jiggle sideways on a phone. */
+    #teamBody .row, #teamBody, .ai-body { --bs-gutter-x: 0.5rem; }
+
+    /* Footer stacks */
+    .footer-inner { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .footer-links { gap: 4px 14px; }
+    .footer-links a { font-size: 0.78rem; }
+
+    /* AI squad table: drop Team, same reasoning as the other player tables */
+    .ai-squad-table th:nth-child(3), .ai-squad-table td:nth-child(3) { display: none; }
+    .ai-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ============================================================
+   AI BEST XV
+   ============================================================ */
+.ai-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.ai-gw-nav { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+
+/* Points pill under each pitch card — the AI tab's equivalent of the
+   next-3-fixtures strip on the My Team pitch. */
+.ai-pts {
+    margin-top: 3px; font-size: 0.68rem; font-weight: 700; color: #1a1a1a;
+    background: rgba(255,255,255,0.9); border-radius: 3px; padding: 1px 3px;
+}
+.ai-actual { color: var(--accent-dark); }
+
+/* Bench rows in the squad table are dimmed — they don't score. */
+.ai-benched td { opacity: 0.55; }
+.ai-arm {
+    display: inline-block; background: #1a1a1a; color: #fff; border-radius: 3px;
+    font-size: 0.58rem; font-weight: 700; padding: 0 4px; margin-left: 4px; vertical-align: middle;
+}
+.ai-arm.vice { background: #6c757d; }
+
+/* Predicted-vs-actual delta */
+.ai-over  { color: #2e9b57; font-weight: 700; }
+.ai-under { color: #e03131; font-weight: 700; }
+
+.ai-squad-table, .ai-history-table { min-width: 0; width: 100%; }
+.ai-squad-table th:nth-child(1), .ai-squad-table td:nth-child(1) { width: 34%; }
+.ai-squad-table th:nth-child(2), .ai-squad-table td:nth-child(2) { width: 11%; }
+.ai-squad-table th:nth-child(3), .ai-squad-table td:nth-child(3) { width: 17%; }
+.ai-squad-table th:nth-child(4), .ai-squad-table td:nth-child(4) { width: 13%; }
+.ai-squad-table th:nth-child(5), .ai-squad-table td:nth-child(5) { width: 13%; }
+.ai-squad-table th:nth-child(6), .ai-squad-table td:nth-child(6) { width: 12%; }
+/* ============================================================
+   AI MANAGER
+   ============================================================ */
+.mgr-why { font-size: 0.7rem; color: #777; margin-top: 4px; line-height: 1.35; }
+.mgr-chip-play {
+    background: var(--accent); color: #fff; border-radius: 8px;
+    padding: 6px 10px; font-size: 0.8rem; margin-bottom: 8px;
+}
+.mgr-chip-note {
+    display: flex; align-items: baseline; gap: 8px;
+    border: 1px solid #eee; border-radius: 8px;
+    padding: 6px 10px; margin-bottom: 5px; font-size: 0.76rem;
+}
+/* A chip that has met its threshold - the one thing worth spotting at a glance */
+.mgr-chip-note.ready { border-color: #cde9d0; background: #f3fbf4; }
+.mgr-chip-name {
+    font-weight: 700; color: var(--accent-dark); text-transform: uppercase;
+    font-size: 0.66rem; letter-spacing: 0.03em; flex: 0 0 62px;
+}
+.mgr-chip-detail { color: #666; min-width: 0; }
+.mgr-upcoming { font-size: 0.72rem; color: #888; margin-top: 6px; }
+
+/* ============================================================
+   AI pitches: fixture beside the projection; header nav right
+   ============================================================ */
+
+/* A projected score on its own is a bare number - the fixture next to it is
+   what makes it judgeable. Same difficulty colour key as everywhere else. */
+.ai-line { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 3px; }
+.ai-fix {
+    font-size: 0.55rem; font-weight: 700; color: #1a1a1a;
+    border-radius: 3px; padding: 1px 3px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai-line .ai-pts { margin-top: 0; }
+
+/* Heading takes the room; the gameweek arrows stay pinned to the right. */
+.ai-head-text { flex: 1 1 240px; min-width: 0; }
+.ai-head .ai-gw-nav { margin-left: auto; flex: 0 0 auto; }
+
+@media (max-width: 575.98px) {
+    .ai-fix { font-size: 0.46rem; padding: 0 2px; }
+    .ai-line { gap: 2px; }
+    /* Override the earlier column stack: keep it a wrapping row so the arrows
+       can still sit hard right once the heading takes the full width. */
+    .ai-head { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+    .ai-head-text { flex: 1 1 100%; }
+    .ai-head .ai-gw-nav { margin-left: auto; margin-top: 4px; }
+}
+
+/* ---- AI pane headings match the My Team team-name scale ---- */
+.ai-title { color: var(--accent-dark); font-weight: 700; }
+
+/* ---- Recommended-transfers refresh: label stays, icon spins ---- */
+.rt-icon { display: inline-block; }
+.rt-icon.spinning { animation: news-spin 0.8s linear infinite; }
+
+/* ---- AI player box: projection on top, fixture beneath, one tile ----
+   Same shape and difficulty colouring as .mini-gw on the My Team pitch, so the
+   two pitches read as the same component rather than two similar ones. */
+.ai-mini {
+    display: inline-flex; flex-direction: column; align-items: center;
+    border-radius: 4px; padding: 1px 3px; line-height: 1.15;
+    min-width: 40px; color: #1a1a1a; white-space: nowrap;
+}
+.ai-mini b { font-size: 0.72rem; font-weight: 700; }
+.ai-mini span { font-size: 0.5rem; font-weight: 600; letter-spacing: -0.2px; }
+.ai-mini b.ai-actual { color: var(--accent-dark); }
+
+@media (max-width: 575.98px) {
+    .ai-mini { min-width: 0; padding: 1px 2px; }
+    .ai-mini b { font-size: 0.62rem; }
+    .ai-mini span { font-size: 0.42rem; }
+}
+
+/* ============================================================
+   LIVE GAMEWEEK
+   ============================================================ */
+.live-banner {
+    background: #eef7f0; border: 1px solid #cde9d0; color: #1f6b36;
+    border-radius: 8px; padding: 8px 12px; font-size: 0.85rem;
+}
+.live-prov { color: #8a6d1f; font-size: 0.78rem; }
+/* Quiet pulse: the number moves on its own, so say so without nagging. */
+.live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #2e9b57; margin: 0 5px 0 8px;
+    animation: live-pulse 1.8s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* Actual points replace the fixture strip on a locked gameweek. */
+.live-pts {
+    display: inline-block; background: var(--accent); color: #fff;
+    font-size: 0.78rem; font-weight: 700; border-radius: 4px; padding: 1px 7px;
+}
+.live-pts.live-cap { background: #1a1a1a; }
+
+/* Nothing on a locked pitch is clickable-to-edit. */
+.gw-locked .player { cursor: default; }
+
+@media (max-width: 575.98px) {
+    .live-pts { font-size: 0.66rem; padding: 0 5px; }
+    .live-banner { font-size: 0.78rem; padding: 6px 9px; }
+}
+
+
+/* ============================================================
+   Tile + badge polish
+   ============================================================ */
+
+/* `.ps-name span { color: inherit }` further up outranks `.ai-arm` on
+   specificity, so the armband badge was rendering dark-on-dark. Qualify it to
+   win rather than reaching for !important. */
+.ps-name .ai-arm, .ai-squad-table .ai-arm { color: #fff; }
+
+/* AI pitch tile: opponent above, score below, both a size down so a long
+   "BOU (A)" fits the box instead of being clipped. */
+.ai-mini b {
+    font-size: 0.5rem; font-weight: 700; letter-spacing: -0.2px;
+    display: block; white-space: nowrap;
+}
+.ai-mini span { font-size: 0.62rem; font-weight: 700; }
+.ai-mini span.ai-actual { color: var(--accent-dark); }
+
+/* The chip actually being played this week reads first. */
+.chip-card.chip-playing { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,92,246,0.25); }
+.chip-card.chip-playing .chip-status { background: var(--accent); color: #fff; }
+
+@media (max-width: 575.98px) {
+    .ai-mini b { font-size: 0.42rem; }
+    .ai-mini span { font-size: 0.55rem; }
+}
+
+/* ============================================================
+   Fitting text into its box
+   ============================================================ */
+
+/* Upcoming-fixture cells on the My Team pitch. Bracketing the venue made the
+   label longer ("ARS (H)" vs "ARS H"), so the opponent line drops a size and
+   the tile uses the full width of its column instead of a fixed minimum. */
+/* These tiles are ~21px wide on the pitch, and horizontal padding is 4px of
+   that - the difference between the label fitting and being clipped. The
+   background colour still reads as a box without it. */
+.player-gws .mini-gw { min-width: 0; flex: 1 1 0; padding: 1px 0; font-size: 0.56rem; }
+.player-gws .mini-gw b { font-size: 0.38rem; letter-spacing: -0.3px; }
+
+@media (max-width: 575.98px) {
+    /* A pitch card is ~64px wide on a phone. Three fixture tiles leaves ~16px
+       of content each, and "ARS (H)" needs ~20px - no font size fixes that and
+       stays readable. Two tiles gets ~31px each, so the label fits at a size
+       you can actually read. The third fixture is still on the player card and
+       in the tables; this is only the pitch, only on a phone. */
+    .pitch .player-gws .mini-gw:nth-child(n+3),
+    .bench .player-gws .mini-gw:nth-child(n+3) { display: none; }
+    .player-gws .mini-gw { font-size: 0.55rem; padding: 1px 2px; }
+    .player-gws .mini-gw b { font-size: 0.42rem; }
+}
+
+/* Chip names on one line - "Triple Captain" wrapped and pushed its card taller
+   than the others. Cards share the row evenly rather than being width-capped,
+   so there's room to use. */
+.chips-bar .chip-card { max-width: none; }
+.chip-card-name {
+    font-size: 0.62rem; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 575.98px) {
+    .chip-card-name { font-size: 0.5rem; letter-spacing: -0.2px; }
+    .chip-card { padding: 4px 2px; }
 }

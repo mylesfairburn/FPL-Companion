@@ -12,9 +12,12 @@ both are DERIVED here (walk the history / infer from used chips) and flagged as
 estimates in the response.
 """
 
+from datetime import datetime, timezone
+
 import pandas as pd
 import requests
 
+import seasons
 from fetch_data import get_bootstrap_data
 
 BASE = "https://fantasy.premierleague.com/api"
@@ -50,6 +53,10 @@ def _num(v):
     except (TypeError, ValueError):
         return None
 
+
+# detect_mode() lives in gameweek.py now - it's part of the season clock, which
+# the scheduled jobs also depend on, and keeping one events[] reader avoids two
+# modules disagreeing about what gameweek it is.
 
 _TEAM_SHORT = None
 
@@ -90,13 +97,19 @@ def _build_element_index(position_dfs):
                 "team": int(row["team"]) if row.get("team") == row.get("team") else None,
                 "team_name": short.get(int(row["team"])) if row.get("team") == row.get("team") else None,
                 "form": _num(row.get("form")),
-                "next_gameweeks": next_gws if isinstance(next_gws, list) else [],
                 "cost": round(float(row["now_cost"]) / 10, 1) if row.get("now_cost") is not None else None,
                 "rating": round(float(row["rating"]), 1) if row.get("rating") == row.get("rating") else 0.0,
                 "predicted": round(float(predicted), 1),
                 "status": row.get("status", "a"),
                 "news": row.get("news", "") or "",
-                "next_gameweeks": (next_gws[:3] if isinstance(next_gws, list) else []),
+                # Drives the optimiser's risk adjustment and its bench cover.
+                "chance_of_playing_next_round": (
+                    float(row["chance_of_playing_next_round"])
+                    if row.get("chance_of_playing_next_round") == row.get("chance_of_playing_next_round")
+                       and row.get("chance_of_playing_next_round") is not None else None),
+                # NOT truncated to 3: the AI Manager plans over a longer
+                # horizon, and the front end slices to 3 itself for display.
+                "next_gameweeks": (next_gws if isinstance(next_gws, list) else []),
             }
     return index
 
@@ -239,10 +252,14 @@ def get_all_players(position_dfs):
     if position_dfs is None:
         return {"players": []}
     idx = _build_element_index(position_dfs)
+    # `status` is included because the squad optimiser must not build a team
+    # around an injured or suspended player ('a' = available).
     players = [{"id": p["id"], "web_name": p["web_name"], "pos": p["pos"],
                 "team_code": p["team_code"], "team": p.get("team"),
                 "team_name": p.get("team_name"), "form": p.get("form"),
                 "cost": p["cost"], "rating": p["rating"], "predicted": p["predicted"],
+                "status": p.get("status", "a"), "news": p.get("news", ""),
+                "chance_of_playing_next_round": p.get("chance_of_playing_next_round"),
                 "next_gameweeks": p.get("next_gameweeks", [])}
                for p in idx.values()]
     return {"players": players}
@@ -257,15 +274,16 @@ def _prev_season_stats_by_code():
     goals_conceded, minutes} summed across last season's full totals - the
     fallback source for underperforming-players before the current season
     has enough minutes played for anyone to judge (preseason, or the first
-    few GWs). previous_season_stats.csv is PER-GAMEWEEK (one row per player
+    few GWs). the previous season's gameweek_stats.csv is PER-GAMEWEEK (one row per player
     per match), so it has to be grouped and summed to get season totals -
     keeping only the last row per player would just be that player's most
     recent single match."""
     global _PREV_SEASON_UNDERPERF_STATS
     if _PREV_SEASON_UNDERPERF_STATS is None:
         try:
-            stats = pd.read_csv("../data/raw/previous_season_stats.csv")
-            players = pd.read_csv("../data/raw/previous_season_players.csv")
+            prev = seasons.previous_season() or seasons.FIRST_TRAINING_SEASON
+            stats = pd.read_csv(seasons.gameweek_stats_path(prev))
+            players = pd.read_csv(seasons.players_path(prev))
         except (FileNotFoundError, OSError):
             _PREV_SEASON_UNDERPERF_STATS = {}
             return _PREV_SEASON_UNDERPERF_STATS
@@ -465,7 +483,15 @@ def get_team_view(team_id, event, position_dfs):
 def get_news_feed(limit=20):
     """Most recent injury/transfer blurbs, straight from FPL's own per-player
     'news' field (the same text the FPL site shows next to a flagged player).
-    No separate news source needed - every flagged player already carries one."""
+    No separate news source needed - every flagged player already carries one.
+
+    Always hits the live API rather than the cached players_full.csv, so the
+    feed is as fresh as FPL's own site. Note that FPL only stamps news_added
+    when a player's flag CHANGES, so a quiet week genuinely produces no new
+    items - the feed looking static isn't necessarily a bug.
+
+    'added' is the full ISO timestamp (news_added) so the front end can show a
+    time as well as a date; 'date' is kept as the plain YYYY-MM-DD."""
     data = _get(f"{BASE}/bootstrap-static/")
     if data is None:
         return {"available": False, "stories": []}
@@ -477,10 +503,12 @@ def get_news_feed(limit=20):
         "team": short.get(e.get("team"), ""),
         "team_code": e.get("team_code"),
         "headline": e.get("news", ""),
+        "added": e.get("news_added"),
         "date": (e.get("news_added") or "")[:10],
         "status": e.get("status"),
     } for e in items[:limit]]
-    return {"available": True, "stories": stories}
+    return {"available": True, "stories": stories,
+            "fetched_at": datetime.now(timezone.utc).isoformat()}
 
 
 def get_league_standings(league_id, page=1):

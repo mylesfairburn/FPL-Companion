@@ -1,0 +1,22 @@
+# /etc/cron.d/fpl-companion
+#
+# Two jobs on different clocks - see deploy/README.md for the reasoning.
+#   deadline-watch : hourly, must be timing-accurate (FPL deadlines are irregular)
+#   daily-refresh  : 03:00, deliberately late (BPS/data_checked lags late kickoffs)
+#
+# Edit CONTAINER and the token path below, then:
+#   cp deploy/fpl-companion.cron /etc/cron.d/fpl-companion && chmod 644 /etc/cron.d/fpl-companion
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# TZ matters for the 03:00 slot only; the deadline watcher reads UTC timestamps
+# from the API and doesn't care what the host clock is set to.
+CRON_TZ=Europe/London
+
+# Hourly, at 5 past - a few minutes clear of the top of the hour so it isn't
+# competing with every other cron on the box.
+5 * * * * root docker exec -e FPL_REFRESH_TOKEN="$(cat /srv/fpl-companion/refresh_token)" fpl-companion python jobs.py deadline-watch >> /var/log/fpl-companion-watch.log 2>&1
+
+# Daily heavy refresh + backfill of actual scores onto frozen snapshots.
+0 3 * * * root docker exec -e FPL_REFRESH_TOKEN="$(cat /srv/fpl-companion/refresh_token)" fpl-companion python jobs.py daily-refresh >> /var/log/fpl-companion-daily.log 2>&1

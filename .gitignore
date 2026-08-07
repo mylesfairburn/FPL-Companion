@@ -5,3 +5,11 @@ __pycache__/
 venv/
 build/
 .vscode/
+# SQLite state — lives on a mounted volume in production, never in the image
+state/
+*.db
+*.db-wal
+*.db-shm
+
+# Live API cache - rewritten on every fetch, not source data
+data/seasons/*/bootstrap.json

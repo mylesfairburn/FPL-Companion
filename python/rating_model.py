@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-MODEL_DIR = '../data/models'
+import seasons
+
+MODEL_DIR = seasons.MODELS_DIR
 ROLL_WINDOW = 3
 
 
@@ -147,10 +149,10 @@ def attach_per_gameweek_points(position_dfs, model_bundles, form_features,
 
 
 def build_current_form_features(
-    current_gw_path='../data/raw/gameweek_history.csv',
-    fallback_path='../data/raw/previous_season_stats.csv',
-    current_players_path='../data/raw/players_full.csv',
-    previous_players_path='../data/raw/previous_season_players.csv',
+    current_gw_path=None,
+    fallback_path=None,
+    current_players_path=None,
+    previous_players_path=None,
     min_current_gameweeks=3,
     mode=None,
 ):
@@ -161,7 +163,17 @@ def build_current_form_features(
     player across seasons, so it's the only safe join key here.
 
     mode: 'preseason' or 'inseason' forces which source is used. Leave as
-    None to auto-detect based on how many current-season gameweeks exist."""
+    None to auto-detect based on how many current-season gameweeks exist.
+
+    Paths default to the current/previous season directories via seasons.py.
+    The current-season file used to be written by one path and read by another,
+    so 'inseason' could never find it however far into the season you were."""
+
+    prev = seasons.previous_season() or seasons.FIRST_TRAINING_SEASON
+    current_gw_path = current_gw_path or seasons.gameweek_stats_path()
+    fallback_path = fallback_path or seasons.gameweek_stats_path(prev)
+    current_players_path = current_players_path or seasons.players_path()
+    previous_players_path = previous_players_path or seasons.players_path(prev)
 
     stat_cols = ['expected_goal_involvements', 'minutes', 'bonus']
 
@@ -309,7 +321,7 @@ def plot_top_ratings(position_dfs, top_n=10, out_dir='../data/plots'):
         print(f"Saved chart to {path}")
 
 
-def get_rated_position_dfs(position_dfs, mode='preseason', n_gameweeks=3):
+def get_rated_position_dfs(position_dfs, mode='preseason', n_gameweeks=8):
     """Runs the full rating pipeline (form features, fixtures, model
     inference) for the given mode, then attaches per-gameweek predicted points
     for the next N gameweeks. Shared entry point for the CLI and the web app."""

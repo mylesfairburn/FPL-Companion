@@ -9,7 +9,8 @@ just gets you clean, fetched data ready to work with.
 
 import pandas as pd
 
-from fetch_data import get_bootstrap_data, get_all_gameweek_history
+import seasons
+from fetch_data import get_bootstrap_data, refresh_gameweek_stats
 
 
 def build_position_dfs(players_df, positions_df):
@@ -22,29 +23,38 @@ def build_position_dfs(players_df, positions_df):
 
 def run_pipeline(pull_gameweek_history=False):
     """Runs the full data pull. Set pull_gameweek_history=True to also refresh
-    the per-gameweek history (slow - one API call per player)."""
+    this season's per-gameweek stats (slow - one API call per player, so the
+    nightly job does it, not app startup).
+
+    get_bootstrap_data() now always returns a dict, including when the API is
+    unreachable, so the subscripts below can't blow up mid-outage."""
 
     all_data = get_bootstrap_data()
 
-    players_df = pd.DataFrame(all_data['elements'])
-    teams_df = pd.DataFrame(all_data['teams'])
-    positions_df = pd.DataFrame(all_data['element_types'])
+    players_df = pd.DataFrame(all_data.get('elements') or [])
+    teams_df = pd.DataFrame(all_data.get('teams') or [])
+    positions_df = pd.DataFrame(all_data.get('element_types') or [])
 
-    players_df = players_df[players_df['status'] != 'u']
+    if players_df.empty or positions_df.empty:
+        raise RuntimeError(
+            "No player data available from the FPL API or any local cache - "
+            f"expected a cache at {seasons.players_path()}.")
+
+    if 'status' in players_df.columns:
+        players_df = players_df[players_df['status'] != 'u']
 
     position_dfs = build_position_dfs(players_df, positions_df)
 
-    gameweek_history_df = None
+    gameweek_stats = None
     if pull_gameweek_history:
-        gameweek_history_df = get_all_gameweek_history(players_df['id'])
-        gameweek_history_df.to_csv('data/raw/gameweek_history.csv', index=False)
+        gameweek_stats = refresh_gameweek_stats(players_df['id'])
 
     return {
         'players_df': players_df,
         'teams_df': teams_df,
         'positions_df': positions_df,
         'position_dfs': position_dfs,
-        'gameweek_history_df': gameweek_history_df,
+        'gameweek_stats': gameweek_stats,
     }
 
 

@@ -19,6 +19,13 @@ COPY data/ ./data/
 # exactly as they do when you run uvicorn locally
 WORKDIR /app/python
 
+# SQLite lives here and MUST be a mounted volume. Anything written inside the
+# image is destroyed on the next `docker pull` of a rebuilt tag, which would
+# silently wipe every snapshot. Note this is /app/state and NOT /app/data —
+# mounting over /app/data would shadow the CSVs copied in above.
+ENV FPL_DB_PATH=/app/state/fpl_companion.db
+VOLUME ["/app/state"]
+
 EXPOSE 8000
 
 # Single worker on purpose: your app holds rated data in an in-memory

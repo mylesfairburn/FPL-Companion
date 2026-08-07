@@ -1,0 +1,25 @@
+        <!-- ============ PLAYERS ============ -->
+        <div id="pane-players" class="tab-pane d-none">
+            <ul class="nav nav-pills mb-3" id="playersViewTabs">
+                <li class="nav-item"><button class="nav-link active" data-view="all">All players</button></li>
+                <li class="nav-item"><button class="nav-link" data-view="underperforming">Underperforming</button></li>
+            </ul>
+            <div id="playersTabSearch"></div>
+            <div id="underperformingView" class="d-none">
+                <p class="text-muted small mb-2">Uses underlying stats to identify underperforming player, goals below xG for
+                    attackers, goals conceded above xGC for keepers/defenders.</p>
+                <ul class="nav nav-pills mb-2" id="underperfPosTabs">
+                    <li class="nav-item"><button class="nav-link active" data-group="attackers">Attackers</button></li>
+                    <li class="nav-item"><button class="nav-link" data-group="defenders">Defenders</button></li>
+                </ul>
+                <div class="ps-list">
+                    <table class="table table-sm underperf-table mb-0">
+                        <thead><tr>
+                            <th>Player</th><th>Pos</th><th>Team</th><th>Metric</th>
+                            <th>Pred</th><th>Real</th><th>Diff</th><th>£m</th><th>Next 3</th>
+                        </tr></thead>
+                        <tbody id="underperfBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>

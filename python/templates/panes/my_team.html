@@ -1,0 +1,104 @@
+        <!-- ============ MY TEAM ============ -->
+        <div id="pane-team" class="tab-pane">
+
+            <!-- First-run prompt for the FPL ID -->
+            <div id="idPrompt" class="id-prompt d-none">
+                <h5 class="mb-2">Connect your FPL team</h5>
+                <p class="text-muted small mb-3">Enter your FPL ID to load your squad. We'll remember it on this device.</p>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <input type="number" id="idInput" class="form-control" style="max-width:220px" placeholder="e.g. 1234567">
+                    <span class="info-icon" tabindex="0" role="button" aria-label="How to find your FPL ID"
+                            data-tip="Log in at fantasy.premierleague.com, select 'Pick Team' then select 'Gameweek History'. Look at the address bar: fantasy.premierleague.com/entry/XXXXXX/... - that number (XXXXXX) is your FPL ID.">i</span>
+                    <button id="idSave" class="btn btn-primary">Load team</button>
+                </div>
+                <div id="idError" class="text-danger small mt-2"></div>
+            </div>
+
+            <!-- Loaded team -->
+            <div id="teamContent" class="d-none">
+
+                <!-- Header -->
+                <div class="team-header">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h4 class="team-name mb-0" id="teamName"></h4>
+                            <div class="text-muted small" id="managerName"></div>
+                        </div>
+                        <div class="text-end">
+                            <div class="gw-nav" id="gwNav">
+                                <button id="gwPrev" class="gw-btn">&#9664;</button>
+                                <span id="gwLabel" class="gw-label">GW</span>
+                                <button id="gwNext" class="gw-btn">&#9654;</button>
+                            </div>
+                            <div class="d-flex gap-1 justify-content-end mt-1 flex-wrap">
+                                <button id="saveTeamBtn" class="btn btn-sm btn-primary">Save team</button>
+                                <button id="resetBtn" class="btn btn-sm btn-outline-primary d-none">Reset to actual</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-chips" id="statChips"></div>
+                </div>
+
+                <div id="teamUnavailable" class="alert alert-secondary d-none"></div>
+
+                <div id="liveBanner" class="live-banner d-none mt-2"></div>
+
+                <div id="transferBanner" class="sub-banner d-none mt-2"></div>
+
+                <!-- Chips+pitch (left) | Recommended | Find players -->
+                <div id="teamBody" class="row g-3 mt-1">
+
+                    <!-- Left box: chips above the pitch -->
+                    <div class="col-lg-5" id="pitchCol">
+                        <div id="subBanner" class="sub-banner d-none"></div>
+                        <div id="chipsBar" class="chips-bar"></div>
+                        <!-- Mobile only: a chip's explanation drops in right under the
+                             chips row instead of floating over the middle of the screen. -->
+                        <div id="chipInfo" class="chip-info d-none"></div>
+
+                        <div class="pitch-wrap">
+                            <div class="pitch" id="pitch"></div>
+                            <div class="bench" id="bench"></div>
+                        </div>
+
+                        <div class="pitch-actions mt-3 mb-1">
+                            <button id="optimiseBtn" class="btn btn-sm btn-primary">Optimise lineup</button>
+                        </div>
+                        <p class="text-muted small mb-0">Changes are only a preview &mdash; apply them in the official FPL app or website.</p>
+                    </div>
+
+                    <!-- Recommended transfers -->
+                    <div class="col-lg-2" id="recCol">
+                        <h6 class="section-heading">Recommended transfers</h6>
+                        <div id="transferRecs" class="mt-2"></div>
+                        <button id="refreshTransfersBtn" class="btn btn-sm btn-outline-primary mt-2">
+                            <span class="rt-icon">&#8635;</span> Refresh</button>
+                    </div>
+
+                    <!-- Player search -->
+                    <div class="col-lg-5" id="searchCol">
+                        <h6 class="section-heading">Find players</h6>
+                        <div id="playerSearch"></div>
+                    </div>
+
+                    <!-- Leagues + news -->
+                    <div class="col-12">
+                        <div class="row g-3 mt-1 leagues-news-row">
+                            <div class="col-lg-8" id="leaguesSection">
+                                <h6 class="section-heading">Your leagues</h6>
+                                <div id="leaguesList"></div>
+                            </div>
+                            <div class="col-lg-4 news-col">
+                                <div class="news-head-row">
+                                    <h6 class="section-heading mb-0">News feed</h6>
+                                    <span id="newsUpdated" class="news-updated"></span>
+                                    <button id="newsRefresh" class="news-refresh" title="Refresh news">&#8635;</button>
+                                </div>
+                                <div id="newsList" class="news-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>

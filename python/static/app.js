@@ -1,0 +1,2172 @@
+/* FPL Companion front end.
+ *
+ * Served as a static file rather than inlined in the template, so the
+ * browser can cache it between page loads. It contains no Jinja
+ * variables - everything it needs comes from the /api endpoints.
+ *
+ * The markup it drives lives in templates/panes/ (one file per tab) and
+ * templates/partials/ (navbar, tabs, footer, player modal).
+ */
+
+// ---- Tabs ----
+// The open tab and scroll position are remembered across a refresh.
+// Kept in sessionStorage (per-tab, cleared when the tab closes) and
+// mirrored into the URL hash, so a reload, a restored tab or a shared
+// link all land where you were rather than back on My Team at the top.
+const TAB_KEY = 'fpl_active_pane';
+const SCROLL_KEY = 'fpl_scroll_pos';
+const PANES = ['pane-team', 'pane-ai-teams', 'pane-players', 'pane-rotator'];
+
+function activatePane(pane, opts) {
+    opts = opts || {};
+    if (!PANES.includes(pane)) pane = 'pane-team';
+    const btn = document.querySelector(`#mainTabs [data-pane="${pane}"]`);
+    if (!btn) return;
+    document.querySelectorAll('#mainTabs .nav-link').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('d-none'));
+    btn.classList.add('active');
+    document.getElementById(pane).classList.remove('d-none');
+    try { sessionStorage.setItem(TAB_KEY, pane); } catch (e) {}
+    if (history.replaceState) history.replaceState(null, '', '#' + pane);
+    if (pane === 'pane-players') ensurePlayers().then(() => playersTabSearch.refresh());
+    if (pane === 'pane-ai-teams') showAiView(currentAiView);
+    // Only reset scroll on a real click; a restore wants to keep it.
+    if (!opts.restoring) window.scrollTo(0, 0);
+}
+
+document.querySelectorAll('#mainTabs .nav-link').forEach(btn => {
+    btn.addEventListener('click', () => activatePane(btn.dataset.pane));
+});
+
+// Throttled so a scroll doesn't hit storage on every frame.
+let scrollSaveTimer = null;
+window.addEventListener('scroll', () => {
+    if (scrollSaveTimer) return;
+    scrollSaveTimer = setTimeout(() => {
+        scrollSaveTimer = null;
+        try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch (e) {}
+    }, 200);
+});
+
+// The two AI squads answer different questions, so they stay separate views -
+// but they're one destination, not two top-level tabs. Which view you were on
+// is remembered alongside the tab.
+const AI_VIEW_KEY = 'fpl_ai_view';
+let currentAiView = 'mgr';
+try { currentAiView = sessionStorage.getItem(AI_VIEW_KEY) || 'mgr'; } catch (e) {}
+
+function showAiView(view) {
+    currentAiView = (view === 'xi') ? 'xi' : 'mgr';
+    try { sessionStorage.setItem(AI_VIEW_KEY, currentAiView); } catch (e) {}
+    document.querySelectorAll('#aiViewTabs .nav-link').forEach(b =>
+        b.classList.toggle('active', b.dataset.view === currentAiView));
+    document.getElementById('aiViewMgr').classList.toggle('d-none', currentAiView !== 'mgr');
+    document.getElementById('aiViewXi').classList.toggle('d-none', currentAiView !== 'xi');
+    // Loaded lazily, so opening the tab doesn't solve both squads at once.
+    if (currentAiView === 'mgr') ensureMgr(); else ensureAi();
+}
+
+document.querySelectorAll('#aiViewTabs .nav-link').forEach(btn =>
+    btn.addEventListener('click', () => showAiView(btn.dataset.view)));
+
+function restoreView() {
+    // A hash in the URL wins over the remembered tab - an explicit link
+    // should beat "wherever you happened to be last".
+    const fromHash = (location.hash || '').replace('#', '');
+    let pane = PANES.includes(fromHash) ? fromHash : null;
+    if (!pane) { try { pane = sessionStorage.getItem(TAB_KEY); } catch (e) {} }
+    activatePane(pane || 'pane-team', { restoring: true });
+
+    let y = 0;
+    try { y = parseInt(sessionStorage.getItem(SCROLL_KEY) || '0', 10) || 0; } catch (e) {}
+    if (!y) return;
+    // Content loads asynchronously, so the page is short at first and a
+    // single scrollTo would be clamped. Retry briefly as it grows, and
+    // stop early if the user scrolls themselves.
+    let tries = 0;
+    let interrupted = false;
+    const stop = () => { interrupted = true; };
+    window.addEventListener('wheel', stop, { once: true, passive: true });
+    window.addEventListener('touchstart', stop, { once: true, passive: true });
+    const tick = setInterval(() => {
+        if (interrupted || ++tries > 20 || Math.abs(window.scrollY - y) < 2) {
+            clearInterval(tick);
+            return;
+        }
+        if (document.documentElement.scrollHeight - window.innerHeight >= y) {
+            window.scrollTo(0, y);
+            clearInterval(tick);
+        }
+    }, 100);
+}
+
+// ---- Shirt kits ----
+function shirtUrl(teamCode, position) {
+    if (teamCode == null) return '';
+    const isGk = position === 'Goalkeeper' || position === 'GK';
+    return `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${teamCode}${isGk ? '_1' : ''}-66.png`;
+}
+function shirtImg(teamCode, position, cls) {
+    const url = shirtUrl(teamCode, position);
+    if (!url) return '';
+    return `<img class="${cls}" src="${url}" alt="" onerror="this.style.display='none'">`;
+}
+
+// Home/away marker. Bracketed everywhere - "ARS H" reads like a scoreline,
+// "ARS (H)" reads as a venue, which is what it is.
+function haTag(g) {
+    if (!g || g.was_home == null) return '';
+    return g.was_home ? '(H)' : '(A)';
+}
+
+// Small clear-button helper for search inputs.
+function wireClear(input, btn, cb) {
+    const upd = () => { btn.style.display = input.value ? '' : 'none'; };
+    input.addEventListener('input', upd);
+    btn.addEventListener('click', () => { input.value = ''; upd(); if (cb) cb(); });
+    upd();
+}
+
+// =====================================================================
+//  MY TEAM
+// =====================================================================
+const FPL_ID_KEY = 'fpl_team_id';
+const idPrompt = document.getElementById('idPrompt');
+const idInput = document.getElementById('idInput');
+const idSave = document.getElementById('idSave');
+const idError = document.getElementById('idError');
+const teamContent = document.getElementById('teamContent');
+
+let teamView = null;
+let workingSquad = null;
+let captainId = null, viceId = null;
+let selectedEvent = null;
+let subSource = null;   // id of the player currently being substituted
+let subEligible = new Set();
+let pendingOuts = [];   // players marked for transfer out (multi-select, all live at once —
+                         // e.g. a marked-out DEF and MID both show DEF/MID candidates together)
+let pendingIn = null;   // player being transferred in (choose who to drop)
+let tinEligible = new Set();
+let transfersUsed = 0;   // real (non-empty-slot) transfers made this preview session
+
+// ---- Live gameweek scoring -------------------------------------------------
+// A gameweek that has kicked off is a RESULT, not a plan: the team is locked in
+// the real game, so the pitch shows what each player actually scored and the
+// editing controls step aside. The upcoming gameweek is the editable one.
+let liveScores = null;      // { [element_id]: points } for the viewed gameweek
+let liveMeta = null;        // { provisional, in_progress }
+let livePollTimer = null;
+const LIVE_POLL_MS = 60000; // matches finish in minutes, not seconds
+
+function gameweekIsLocked() {
+    // Locked = the deadline has gone. currentEvent is the live one; anything at
+    // or before it can no longer be changed.
+    return !!(teamView && !teamView.built && selectedEvent && teamView.current_event
+              && selectedEvent <= teamView.current_event);
+}
+
+function stopLivePolling() {
+    if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+}
+
+function loadLiveScores(gameweek, opts) {
+    opts = opts || {};
+    if (!gameweek) return Promise.resolve(null);
+    return fetch(`/api/live/${gameweek}`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(d => {
+            if (selectedEvent !== gameweek) return null;   // user moved on mid-flight
+            if (!d.available) { liveScores = null; liveMeta = null; return null; }
+            liveScores = d.points || {};
+            liveMeta = { provisional: d.provisional, in_progress: d.in_progress };
+            renderPitch();
+            renderLiveBanner();
+            // Only poll while matches are actually being played.
+            if (d.in_progress && !livePollTimer) {
+                livePollTimer = setInterval(() => loadLiveScores(selectedEvent, { quiet: true }), LIVE_POLL_MS);
+            }
+            if (!d.in_progress) stopLivePolling();
+            return d;
+        })
+        .catch(() => null);
+}
+
+function renderLiveBanner() {
+    const banner = document.getElementById('liveBanner');
+    if (!banner) return;
+    if (!liveScores || !gameweekIsLocked()) { banner.classList.add('d-none'); return; }
+    const total = (workingSquad || []).filter(p => p.starting)
+        .reduce((sum, p) => sum + (liveScores[p.id] || 0) * (p.id === captainId ? 2 : 1), 0);
+    banner.innerHTML =
+        `<strong>GW${selectedEvent}</strong> &mdash; your team is locked. `
+        + `Starting XI has scored <strong>${total}</strong> pts`
+        + (liveMeta && liveMeta.provisional
+            ? ' <span class="live-prov">(provisional &mdash; bonus points aren\u2019t final yet)</span>'
+            : '')
+        + (liveMeta && liveMeta.in_progress ? ' <span class="live-dot"></span>updating' : '');
+    banner.classList.remove('d-none');
+}
+
+function getSavedId() { return localStorage.getItem(FPL_ID_KEY); }
+function showResetBtn() { document.getElementById('resetBtn').classList.remove('d-none'); }
+
+// "Change ID" lives in the navbar now, so it's visible from any tab —
+// but it only makes sense once an ID has been entered, and it would be
+// pointing at the form you're already looking at while the prompt is up.
+const changeIdBtn = document.getElementById('changeId');
+function showChangeId(on) { changeIdBtn.classList.toggle('d-none', !on); }
+
+function showPrompt() {
+    idPrompt.classList.remove('d-none');
+    teamContent.classList.add('d-none');
+    showChangeId(false);
+}
+
+idSave.addEventListener('click', () => {
+    const val = idInput.value.trim();
+    if (!/^\d+$/.test(val)) { idError.textContent = 'Enter a numeric FPL ID.'; return; }
+    idError.textContent = '';
+    localStorage.setItem(FPL_ID_KEY, val);
+    idPrompt.classList.add('d-none');
+    savedDraft = null;      // different manager, different saved team
+    selectedEvent = null;
+    loadTeam();
+});
+idInput.addEventListener('keydown', e => { if (e.key === 'Enter') idSave.click(); });
+
+document.getElementById('changeId').addEventListener('click', () => {
+    idInput.value = getSavedId() || '';
+    showPrompt();
+});
+
+function loadTeam() {
+    const id = getSavedId();
+    if (!id) { showPrompt(); return; }
+    const evParam = selectedEvent ? `&event=${selectedEvent}` : '';
+    fetch(`/api/team?team_id=${id}${evParam}`)
+        .then(res => res.json())
+        .then(renderTeam)
+        .catch(() => { idError.textContent = 'Failed to load team.'; showPrompt(); });
+}
+
+// Editing controls only make sense for the gameweek you can still change.
+function applyLockedState() {
+    const locked = gameweekIsLocked();
+    ['saveTeamBtn', 'optimiseBtn', 'resetBtn', 'refreshTransfersBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('d-none', locked);
+    });
+    const recCol = document.getElementById('recCol');
+    if (recCol) recCol.classList.toggle('d-none', locked);
+    const searchCol = document.getElementById('searchCol');
+    if (searchCol) searchCol.classList.toggle('d-none', locked);
+    document.getElementById('teamBody').classList.toggle('gw-locked', locked);
+
+    if (locked) {
+        loadLiveScores(selectedEvent);
+    } else {
+        liveScores = null; liveMeta = null;
+        stopLivePolling();
+        renderLiveBanner();
+    }
+}
+
+function renderTeam(view) {
+    teamView = view;
+    liveScores = null; liveMeta = null; stopLivePolling();
+    teamContent.classList.remove('d-none');
+    idPrompt.classList.add('d-none');
+    showChangeId(true);
+    exitSubMode();
+    closeModal();
+    pendingOuts = [];
+    pendingIn = null;
+    tinEligible = new Set();
+    transfersUsed = 0;
+    document.getElementById('transferBanner').classList.add('d-none');
+
+    const h = view.header || {};
+    document.getElementById('teamName').textContent = h.name || 'Your team';
+    document.getElementById('managerName').textContent = h.manager || '';
+
+    // Gameweek nav is always visible once a team is being viewed \u2014 it's
+    // just disabled with a neutral label when there's no live gameweek
+    // to navigate (preseason / still-being-built squad).
+    const gwNav = document.getElementById('gwNav');
+    gwNav.classList.remove('d-none');
+    if (view.built) {
+        // Name the gameweek being picked for. "Preseason" is a state, not a
+        // destination - it doesn't say which gameweek your squad is actually for.
+        document.getElementById('gwLabel').textContent = `GW${view.next_event || 1}`;
+        document.getElementById('gwPrev').disabled = true;
+        document.getElementById('gwNext').disabled = true;
+    } else {
+        selectedEvent = view.gw ? view.gw.event : (selectedEvent || view.current_event);
+        document.getElementById('gwLabel').textContent = selectedEvent ? `GW${selectedEvent}` : 'GW\u2013';
+        const cur = view.current_event, minE = view.min_event || 1;
+        document.getElementById('gwPrev').disabled = !selectedEvent || selectedEvent <= minE;
+        document.getElementById('gwNext').disabled = !selectedEvent || !cur || selectedEvent >= cur;
+    }
+
+    const unavailable = document.getElementById('teamUnavailable');
+    const teamBody = document.getElementById('teamBody');
+
+    renderLeagues(view.leagues || {});
+
+    if (!view.available) {
+        renderStatChips(null);
+        if (!view.header) {
+            // Genuine error (bad ID, fetch failure) \u2014 nothing to build on.
+            unavailable.innerHTML = `<div class="mb-2">${view.detail || 'Team not available.'}</div>`;
+            unavailable.classList.remove('d-none');
+            teamBody.classList.add('d-none');
+            return;
+        }
+        // Valid manager, but no live gameweek data yet (preseason).
+        // Load the squad saved against this FPL ID on the server \u2014 the
+        // same team from any device \u2014 or show empty slots to pick into.
+        unavailable.classList.add('d-none');
+        ensurePlayers()
+            .then(loadDraft)
+            .then(draft => {
+                const squad = (draft && draft.squad && draft.squad.length === 15)
+                    ? draft.squad : emptySquad();
+                showBuiltTeam(squad, view.leagues, view.header);
+            });
+        return;
+    }
+    unavailable.classList.add('d-none');
+    teamBody.classList.remove('d-none');
+
+    renderStatChips(view.gw);
+    teamView._gw0 = view.gw ? { ...view.gw } : null;   // snapshot for reset
+
+    workingSquad = view.squad.map(p => ({ ...p }));
+    const cap = view.squad.find(p => p.is_captain);
+    const vice = view.squad.find(p => p.is_vice_captain);
+    captainId = cap ? cap.id : null;
+    viceId = vice ? vice.id : null;
+    document.getElementById('resetBtn').classList.add('d-none');
+
+    teamView.transfer_recs = (view.transfer_recs || []).slice();
+    teamView._recs0 = (view.transfer_recs || []).slice();
+    renderPitch();
+    renderTransfers(teamView.transfer_recs);
+    updatePredicted();
+    renderChips(view.gw);
+    updateTransferBanner();
+    applyLockedState();
+
+    ensurePlayers().then(() => playerSearch.refresh());
+}
+
+function renderStatChips(gw) {
+    const el = document.getElementById('statChips');
+    const h = teamView.header || {};
+    if (teamView.built && gw) {
+        el.innerHTML = chip('Squad value', '\u00a3' + h.value + 'm')
+                     + bankChip(gw.bank)
+                     + freeTransfersChip(gw)
+                     + chip('Predicted', gw.predicted_points, true);
+        return;
+    }
+    if (!gw) {
+        el.innerHTML = chip('Total pts', h.total_points ?? '\u2013')
+                     + chip('Squad value', h.value != null ? '\u00a3' + h.value + 'm' : '\u2013')
+                     + (h.bank != null ? bankChip(h.bank) : chip('In the bank', '\u2013'));
+        return;
+    }
+    const tc = gw.transfers_cost ? ` (-${gw.transfers_cost})` : '';
+    el.innerHTML =
+          chip('GW points', gw.points ?? '\u2013')
+        + chip('Predicted', gw.predicted_points ?? '\u2013', true)
+        + bankChip(gw.bank)
+        + freeTransfersChip(gw)
+        + chip('Transfers', (gw.transfers_made ?? 0) + tc)
+        + chip('Chips left*', (gw.chips_available || []).join(', ') || 'none')
+        + (gw.active_chip ? chip('Active chip', gw.active_chip) : '');
+}
+// Free transfers remaining this preview session, next to the bank chip.
+// Once transfersUsed exceeds the free allowance, each extra manual
+// transfer is a -4 point hit (reflected here and in computePredicted).
+// Preseason / a locally-built draft has no real gameweek deadline yet,
+// so \u2014 same as the real FPL app before the season starts \u2014 transfers
+// there are unlimited and never incur a hit.
+function transferHitPoints() {
+    if (teamView && teamView.built) return 0;
+    const free = (teamView && teamView.gw && typeof teamView.gw.free_transfers_est === 'number')
+        ? teamView.gw.free_transfers_est : 1;
+    return Math.max(0, transfersUsed - free) * 4;
+}
+function freeTransfersChip(gw) {
+    if (teamView && teamView.built) {
+        return `<div class="stat-chip"><span class="stat-label">Free transfers</span><span class="stat-value">Unlimited</span></div>`;
+    }
+    const free = (gw && typeof gw.free_transfers_est === 'number') ? gw.free_transfers_est : 1;
+    const hitPts = transferHitPoints();
+    const remaining = Math.max(0, free - transfersUsed);
+    const val = hitPts > 0 ? `0 <span class="stat-hit">(\u2212${hitPts} hit)</span>` : String(remaining);
+    return `<div class="stat-chip${hitPts > 0 ? ' stat-neg' : ''}"><span class="stat-label">Free transfers</span><span class="stat-value">${val}</span></div>`;
+}
+function bankChip(bank) {
+    const neg = bank < 0;
+    const val = (neg ? '-\u00a3' + Math.abs(bank).toFixed(1) : '\u00a3' + Number(bank).toFixed(1)) + 'm';
+    const style = neg ? ' style="color:#e03131"' : '';
+    return `<div class="stat-chip${neg ? ' stat-neg' : ''}"><span class="stat-label">In the bank</span><span class="stat-value"${style}>${val}</span></div>`;
+}
+function chip(label, value, accent) {
+    return `<div class="stat-chip${accent ? ' accent' : ''}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
+}
+
+// ---- Pitch ----
+function miniFixtures(p) {
+    return (p.next_gameweeks || []).slice(0, 3).map(g => {
+        const color = g.difficulty != null ? colorFor(g.difficulty, 1, 5) : '#eee';
+        const ha = haTag(g);
+        const pts = g.points != null ? Number(g.points).toFixed(1) : '-';
+        return `<span class="mini-gw" style="background:${color}" title="GW${g.event}">`
+            // No space before the bracket: these tiles are ~21px wide while
+            // "ARS (H)" needs ~24px, so the separator is the one character
+            // that can go without shrinking the label below legibility.
+            + `<b>${g.opponent || ''}${ha}</b>${pts}</span>`;
+    }).join('');
+}
+
+function playerCard(p, opts) {
+    opts = opts || {};
+    const isEmpty = p.id < 0;
+    const posLabel = opts.bench ? `<div class="bench-pos">${p.pos}</div>` : '';
+    let cls = 'player';
+    if (opts.subActive) {
+        if (opts.source) cls += ' sub-source';
+        else cls += opts.eligible ? ' sub-eligible' : ' sub-ineligible';
+    }
+    if (isEmpty) {
+        // Empty squad slot — tap it to search for a player to fill it.
+        // All pending-out slots are equally "live" at once now (a
+        // multitransfer isn't limited to one at a time), so every one
+        // marked gets the highlighted look, not just the last-marked.
+        cls += ' empty-slot' + (opts.pendingOut ? ' empty-active' : '');
+        return `<div class="${cls}" data-id="${p.id}" style="position:relative">
+            ${posLabel}
+            <div class="empty-slot-icon">+</div>
+            <div class="player-name-pill">Add ${p.pos}</div>
+        </div>`;
+    }
+    const bstyle = 'position:absolute;top:3px;right:3px;left:auto;bottom:auto;z-index:4';
+    let badge = '';
+    if (p.id === captainId) badge = `<span class="cap-badge" style="${bstyle}">C</span>`;
+    else if (p.id === viceId) badge = `<span class="cap-badge vice" style="${bstyle}">V</span>`;
+    const injured = (p.status && p.status !== 'a')
+        ? `<span class="injury-dot" title="${(p.news || '').replace(/"/g, '')}"></span>` : '';
+    if (opts.pendingOut) cls += ' pending-out pending-active';
+    const plus = opts.pendingOut ? '<div class="out-plus">+</div>' : '';
+    // Once a gameweek is under way the projection is history - show what they
+    // actually scored instead.
+    const live = (liveScores && liveScores[p.id] != null)
+        ? `<div class="player-gws"><span class="live-pts${p.id === captainId ? ' live-cap' : ''}">`
+          + `${liveScores[p.id]}${p.id === captainId ? ' \u00d72' : ''}</span></div>`
+        : `<div class="player-gws">${miniFixtures(p)}</div>`;
+    return `<div class="${cls}" data-id="${p.id}" style="position:relative">
+        ${posLabel}${badge}
+        <div class="player-kit">${shirtImg(p.team_code, p.pos, 'kit')}${injured}${plus}</div>
+        <div class="player-name-pill">${p.web_name}</div>
+        ${live}
+    </div>`;
+}
+
+function renderPitch() {
+    const pitch = document.getElementById('pitch');
+    const benchEl = document.getElementById('bench');
+    const subActive = subSource != null;
+    const tinActive = pendingIn != null;
+    const starters = workingSquad.filter(p => p.starting);
+    const bench = workingSquad.filter(p => !p.starting).sort((a, b) => a.position - b.position);
+    const cardOpts = (p, onBench) => ({
+        bench: onBench,
+        subActive: subActive || tinActive,
+        source: p.id === subSource,
+        eligible: subActive ? subEligible.has(p.id) : (tinActive ? tinEligible.has(p.id) : false),
+        pendingOut: pendingOuts.some(o => o.id === p.id)
+    });
+
+    pitch.innerHTML = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+        const line = starters.filter(p => p.pos === pos).sort((a, b) => a.position - b.position);
+        if (!line.length) return '';
+        return `<div class="pitch-row">${line.map(p => playerCard(p, cardOpts(p, false))).join('')}</div>`;
+    }).join('');
+
+    benchEl.innerHTML = `<div class="bench-label">Bench</div>
+        <div class="bench-row">${bench.map(p => playerCard(p, cardOpts(p, true))).join('')}</div>`;
+
+    [pitch, benchEl].forEach(container =>
+        container.querySelectorAll('.player[data-id]').forEach(el =>
+            el.addEventListener('click', () => onPlayerClick(+el.dataset.id))));
+}
+
+// ---- Player click / substitution ----
+function onPlayerClick(id) {
+    // A locked gameweek is a result. Editing it here would imply a change you
+    // can't actually make in the real game.
+    if (gameweekIsLocked()) {
+        const p = workingSquad.find(x => x.id === id);
+        if (p) openPlayerModal(p, false);
+        return;
+    }
+    if (subSource != null) {
+        if (id === subSource) { exitSubMode(); return; }   // tap the same player again to call the sub off
+        if (!subEligible.has(id)) return;                  // only legal targets
+        const src = subSource; exitSubMode(); attemptSub(src, id); return;
+    }
+    if (pendingIn != null) {
+        if (!tinEligible.has(id)) return;
+        const inp = pendingIn; exitTransferInMode(); performTransfer(id, inp); return;
+    }
+    if (pendingOuts.some(o => o.id === id)) { removePendingOut(id); return; }   // tap greyed → drop it from the multitransfer
+    const p = workingSquad.find(x => x.id === id);
+    if (p && p.id < 0) { markTransferOut(p); return; }   // empty slot — jump straight into "fill this" mode
+    if (p) openPlayerModal(p, true);
+}
+
+function isLegalXI(squad) {
+    const s = squad.filter(p => p.starting);
+    if (s.length !== 11) return false;
+    const c = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    s.forEach(p => c[p.pos]++);
+    return c.GK === 1 && c.DEF >= 3 && c.DEF <= 5 && c.MID >= 2 && c.MID <= 5 && c.FWD >= 1 && c.FWD <= 3;
+}
+function normalizePositions(squad) {
+    const order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    squad.filter(p => p.starting)
+         .sort((a, b) => (order[a.pos] - order[b.pos]) || (b.predicted - a.predicted))
+         .forEach((p, i) => p.position = i + 1);
+    const bench = squad.filter(p => !p.starting);
+    const gk = bench.filter(p => p.pos === 'GK');
+    const rest = bench.filter(p => p.pos !== 'GK').sort((a, b) => a.position - b.position);
+    [...gk, ...rest].forEach((p, i) => p.position = 12 + i);
+}
+function attemptSub(aId, bId) {
+    const a = workingSquad.find(p => p.id === aId), b = workingSquad.find(p => p.id === bId);
+    if (!a || !b || a === b) return;
+    if (a.starting === b.starting) {
+        const t = a.position; a.position = b.position; b.position = t;
+    } else {
+        a.starting = !a.starting; b.starting = !b.starting;
+        if (!isLegalXI(workingSquad)) {
+            a.starting = !a.starting; b.starting = !b.starting;
+            alert('That swap would break the formation (need exactly 1 GK, and at least 3 DEF, 2 MID, 1 FWD).');
+            return;
+        }
+    }
+    normalizePositions(workingSquad);
+    showResetBtn();
+    renderPitch();
+    updatePredicted();
+}
+// Which players can legally swap with `srcId`. Starter <-> bench swaps
+// must keep the resulting XI legal. Bench <-> bench is always legal
+// (it's just a reorder of who's next in line) so those are always offered.
+function computeSubEligible(srcId) {
+    const src = workingSquad.find(p => p.id === srcId);
+    const set = new Set();
+    if (!src) return set;
+    workingSquad.forEach(t => {
+        if (t.id === srcId) return;
+        if (t.starting === src.starting) {
+            if (!src.starting) set.add(t.id);   // bench <-> bench reorder
+            return;
+        }
+        src.starting = !src.starting; t.starting = !t.starting;
+        if (isLegalXI(workingSquad)) set.add(t.id);
+        src.starting = !src.starting; t.starting = !t.starting;
+    });
+    return set;
+}
+function startSub(id) {
+    closeModal();
+    subEligible = computeSubEligible(id);
+    if (!subEligible.size) { alert('No legal swaps available for that player.'); return; }
+    subSource = id;
+    const p = workingSquad.find(x => x.id === id);
+    const banner = document.getElementById('subBanner');
+    banner.innerHTML = `Swapping <strong>${p ? p.web_name : ''}</strong> &mdash; tap a highlighted player to swap, `
+        + `or tap <strong>${p ? p.web_name : 'them'}</strong> again to cancel. `
+        + `<button id="subCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel</button>`;
+    banner.classList.remove('d-none');
+    document.getElementById('subCancel').onclick = exitSubMode;
+    document.getElementById('teamBody').classList.add('sub-mode');
+    renderPitch();
+}
+function exitSubMode() {
+    subSource = null;
+    subEligible = new Set();
+    document.getElementById('subBanner').classList.add('d-none');
+    document.getElementById('teamBody').classList.remove('sub-mode');
+    if (workingSquad) renderPitch();
+}
+
+// ---- Player modal ----
+function closeModal() { document.getElementById('playerModal').classList.add('d-none'); }
+document.getElementById('pmClose').addEventListener('click', closeModal);
+document.getElementById('pmBackdrop').addEventListener('click', closeModal);
+
+function openPlayerModal(p, owned) {
+    document.getElementById('pmKit').innerHTML = shirtImg(p.team_code, p.pos, 'shirt');
+    document.getElementById('pmName').textContent = p.web_name;
+    document.getElementById('pmSub').textContent =
+        `${p.pos}${p.team_name ? ' \u00b7 ' + p.team_name : ''}`
+        + `${p.cost != null ? ' \u00b7 \u00a3' + p.cost.toFixed(1) + 'm' : ''}`
+        + `${p.rating != null ? ' \u00b7 rating ' + Math.round(p.rating) : ''}`;
+
+    const actions = document.getElementById('pmActions');
+    if (owned) {
+        const capBtns = p.starting
+            ? `<button class="btn btn-sm btn-primary pm-btn" id="pmCap">Captain</button>
+               <button class="btn btn-sm btn-outline-primary pm-btn" id="pmVice">Vice</button>` : '';
+        actions.innerHTML = capBtns +
+            `<button class="btn btn-sm btn-outline-primary pm-btn" id="pmSubBtn">Substitute</button>
+             <button class="btn btn-sm btn-outline-primary pm-btn" id="pmTransferBtn">Transfer</button>`;
+        if (p.starting) {
+            document.getElementById('pmCap').onclick = () => {
+                const oldCap = captainId;
+                if (viceId === p.id) viceId = oldCap;   // was vice — swap, don't duplicate
+                captainId = p.id;
+                showResetBtn(); renderPitch(); updatePredicted(); closeModal();
+            };
+            document.getElementById('pmVice').onclick = () => {
+                const oldVice = viceId;
+                if (captainId === p.id) captainId = oldVice;   // was captain — swap, don't duplicate
+                viceId = p.id;
+                showResetBtn(); renderPitch(); updatePredicted(); closeModal();
+            };
+        }
+        document.getElementById('pmSubBtn').onclick = () => startSub(p.id);
+        document.getElementById('pmTransferBtn').onclick = () => markTransferOut(p);
+    } else {
+        // A player from the search table: offer to transfer them in.
+        if (workingSquad) {
+            actions.innerHTML = `<button class="btn btn-sm btn-primary pm-btn" id="pmTransferIn">Transfer in</button>`;
+            document.getElementById('pmTransferIn').onclick = () => markTransferIn(p);
+        } else {
+            actions.innerHTML = '';
+        }
+    }
+    const tbox = document.getElementById('pmTransfer');
+    tbox.classList.add('d-none'); tbox.innerHTML = '';
+
+    renderUpcoming(p);
+    renderForm(p);
+    document.getElementById('playerModal').classList.remove('d-none');
+}
+
+function renderUpcoming(p) {
+    const el = document.getElementById('pmUpcoming');
+    const gws = p.next_gameweeks || [];
+    if (!gws.length) { el.innerHTML = '<span class="text-muted small">No upcoming fixtures.</span>'; return; }
+    el.innerHTML = gws.slice(0, 3).map(g => {
+        const color = g.difficulty != null ? colorFor(g.difficulty, 1, 5) : '#eee';
+        const pts = g.points != null ? Number(g.points).toFixed(1) : '-';
+        return `<span class="pm-fix" style="background:${color}"><b>${g.opponent || ''} ${haTag(g)}</b><span>${pts} pts</span></span>`;
+    }).join('');
+}
+
+function renderForm(p) {
+    const el = document.getElementById('pmForm');
+    el.innerHTML = '<span class="text-muted small">Loading\u2026</span>';
+    fetch(`/api/player/${p.id}`).then(r => r.json()).then(d => {
+        if (!d.available) { el.innerHTML = '<span class="text-muted small">No data available.</span>'; return; }
+        let html = '';
+        if (d.history && d.history.length) {
+            html += `<table class="table table-sm pm-form-table mb-1"><tbody>${d.history.map(hh => `
+                <tr><td>GW${hh.event}</td><td>${hh.opponent || ''} ${hh.was_home ? 'H' : 'A'}</td>
+                <td>${hh.minutes}'</td><td class="pm-pts">${hh.points}</td></tr>`).join('')}</tbody></table>`;
+        } else {
+            html += '<span class="text-muted small">No games this season yet.</span>';
+        }
+        el.innerHTML = html;
+    }).catch(() => { el.innerHTML = '<span class="text-muted small">Couldn\u2019t load form.</span>'; });
+}
+
+// ---- Manual transfers (preview only) — mark players out, then replace ----
+function updateTransferBanner() {
+    const banner = document.getElementById('transferBanner');
+    if (!pendingOuts.length) {
+        // Mid initial pick: no player has been marked out, but there are
+        // still empty slots to fill, and tapping the list fills them in
+        // order — say so, since nothing else on screen explains it.
+        const empties = emptySlots();
+        if (!empties.length) { banner.classList.add('d-none'); return; }
+        const counts = {};
+        empties.forEach(s => counts[s.pos] = (counts[s.pos] || 0) + 1);
+        const need = ['GK', 'DEF', 'MID', 'FWD'].filter(p => counts[p])
+            .map(p => `${counts[p]} ${p}`).join(', ');
+        const left = teamView && teamView.gw ? (teamView.gw.bank || 0) : 0;
+        banner.innerHTML = `Still to pick: <strong>${need}</strong> `
+            + `(£${left.toFixed(1)}m left) &mdash; tap a player below and they'll go straight `
+            + `into the next free slot for their position.`;
+        banner.classList.remove('d-none');
+        return;
+    }
+    const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
+    const totalBudget = bank + pendingOuts.reduce((s, o) => s + o.cost, 0);
+    const labels = pendingOuts.map(o => o.id < 0 ? o.pos : o.web_name);
+    const text = pendingOuts.length === 1
+        ? `Replacing <strong>${labels[0]}</strong>`
+        : `Replacing <strong>${pendingOuts.length}</strong> players (${labels.join(', ')})`;
+    banner.innerHTML = `${text} `
+        + `(\u00a3${totalBudget.toFixed(1)}m total to spend) `
+        + `&mdash; tap a highlighted player below to fill a slot, or tap a greyed player to drop it. `
+        + `<button id="transferCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel all</button>`;
+    banner.classList.remove('d-none');
+    document.getElementById('transferCancel').onclick = cancelTransfers;
+}
+function markTransferOut(p) {
+    closeModal();
+    if (!pendingOuts.some(o => o.id === p.id)) pendingOuts.push(p);
+    renderPitch();            // grey the player out straight away
+    updateTransferBanner();
+    ensurePlayers().then(() => playerSearch.refresh());
+}
+function cancelTransfers() {
+    pendingOuts = [];
+    document.getElementById('transferBanner').classList.add('d-none');
+    playerSearch.refresh();
+    renderPitch();
+}
+function removePendingOut(id) {
+    pendingOuts = pendingOuts.filter(o => o.id !== id);
+    updateTransferBanner();
+    playerSearch.refresh();
+    renderPitch();
+}
+// Empty (unfilled) squad slots for a position, in pitch order. During the
+// initial pick these are what an incoming player drops into.
+function emptySlots(pos) {
+    return (workingSquad || []).filter(p => p.id < 0 && (!pos || p.pos === pos))
+                               .sort((a, b) => a.position - b.position);
+}
+function hasEmptySlots() { return emptySlots().length > 0; }
+
+function resolveTransfer(inp) {
+    // Match the incoming player's position to the right slot. Several
+    // different positions can be queued at once, so it isn't necessarily
+    // "the most recently marked" one. Where more than one slot of the
+    // position is open — a multi-transfer of two MIDs, or the initial
+    // pick with five empty MID slots — the first one just gets used
+    // rather than making the user nominate which of the identical slots
+    // they meant.
+    const out = pendingOuts.find(o => o.pos === inp.pos) || emptySlots(inp.pos)[0];
+    if (!out) return;
+    if (!performTransfer(out.id, inp)) return;   // blocked (e.g. club limit) — keep it queued
+    pendingOuts = pendingOuts.filter(o => o.id !== out.id);
+    updateTransferBanner();
+    playerSearch.refresh();
+    renderPitch();
+}
+
+// Predicted GW points, with the captain counting double, minus any
+// -4 hits from exceeding free transfers this session. Recomputed
+// client-side so captaincy / lineup / transfer changes stay in sync.
+function computePredicted() {
+    if (!workingSquad) return null;
+    const raw = workingSquad.filter(p => p.starting)
+        .reduce((s, p) => s + (p.predicted || 0) * (p.id === captainId ? 2 : 1), 0);
+    return +(raw - transferHitPoints()).toFixed(1);
+}
+function updatePredicted() {
+    if (gameweekIsLocked()) { renderLiveBanner(); return; }
+    if (teamView && teamView.gw) {
+        teamView.gw.predicted_points = computePredicted();
+        renderStatChips(teamView.gw);
+    }
+}
+
+// Transfer a searched player in: let the user pick who to drop. Any
+// OTHER players already marked for transfer-out (mid multi-transfer,
+// not yet resolved) are left alone rather than wiped \u2014 they won't be
+// left in the team either, so they're excluded from the incoming
+// player's club-limit check too, and aren't offered as a second drop
+// candidate for this same incoming player.
+function markTransferIn(inp) {
+    if (!workingSquad) return;
+    if (workingSquad.some(p => p.id === inp.id)) { alert('That player is already in your squad.'); return; }
+    closeModal();
+    // A slot is already waiting for this position — either one the user
+    // marked for transfer out, or an empty slot from the initial pick —
+    // so fill it straight away. Only ask "who goes out?" when the squad
+    // is full and nothing has been queued.
+    if (pendingOuts.some(o => o.pos === inp.pos) || emptySlots(inp.pos).length) {
+        resolveTransfer(inp);
+        return;
+    }
+    const leaving = new Set(pendingOuts.map(o => o.id));
+    tinEligible = new Set(workingSquad
+        .filter(p => p.pos === inp.pos && !leaving.has(p.id)
+            && workingSquad.filter(x => x.team === inp.team && x.id !== p.id && !leaving.has(x.id)).length < 3)
+        .map(p => p.id));
+    if (!tinEligible.size) { alert(`No eligible ${inp.pos} to swap out for ${inp.web_name}.`); return; }
+    pendingIn = inp;
+    const banner = document.getElementById('transferBanner');
+    banner.innerHTML = `Transferring in <strong>${inp.web_name}</strong> \u2014 tap a highlighted player to swap out. `
+        + `<button id="tinCancel" class="btn btn-link btn-sm p-0 align-baseline">cancel</button>`;
+    banner.classList.remove('d-none');
+    document.getElementById('tinCancel').onclick = exitTransferInMode;
+    renderPitch();
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function exitTransferInMode() {
+    pendingIn = null; tinEligible = new Set();
+    if (pendingOuts.length) { updateTransferBanner(); }   // restore the "Replacing X" banner if one was in progress
+    else { document.getElementById('transferBanner').classList.add('d-none'); }
+    renderPitch();
+}
+
+function performTransfer(outId, inp) {
+    const idx = workingSquad.findIndex(p => p.id === outId);
+    if (idx < 0) return false;
+    // Enforce max 3 players from any single club, counting only players who
+    // will actually remain in the team — other slots already marked for
+    // transfer out (mid multi-transfer) don't count against the incoming club.
+    const leaving = new Set([...pendingOuts.map(o => o.id), outId]);
+    if (workingSquad.filter(p => p.team === inp.team && !leaving.has(p.id)).length >= 3) {
+        alert(`You can only have 3 players from one club.`);
+        return false;
+    }
+    const old = workingSquad[idx];
+    if (old.id > 0) transfersUsed++;   // replacing an empty slot (initial pick) isn't a "transfer"
+    if (teamView.gw) teamView.gw.bank = +((teamView.gw.bank || 0) - (inp.cost - old.cost)).toFixed(1);
+    workingSquad[idx] = { ...inp, position: old.position, starting: old.starting,
+        is_captain: old.is_captain, is_vice_captain: old.is_vice_captain,
+        multiplier: old.multiplier, status: 'a', news: '' };
+    if (teamView.header) teamView.header.value = +workingSquad.reduce((s, p) => s + (p.cost || 0), 0).toFixed(1);
+    if (captainId === old.id) captainId = inp.id;
+    if (viceId === old.id) viceId = inp.id;
+    if (teamView.transfer_recs) {
+        teamView.transfer_recs = teamView.transfer_recs.filter(
+            r => workingSquad.some(p => p.id === r.out.id));
+        renderTransfers(teamView.transfer_recs);
+    }
+    showResetBtn();
+    closeModal();
+    updatePredicted();
+    renderPitch();
+    updateTransferBanner();
+    playerSearch.refresh();
+    return true;
+}
+
+// ---- Optimise / reset ----
+// One button: the best XI and the armband are the same decision. Picking the
+// lineup and then separately picking a captain from it is two clicks for one
+// outcome, and leaves you with a captain chosen from the OLD eleven if you
+// only press one of them.
+//
+// This recomputes from the CURRENT workingSquad rather than reading the
+// `optimised` payload the server sent at load. That payload is a snapshot of
+// the squad as it was: after any transfer its player ids no longer match, so
+// the incoming players were skipped and the lineup silently came out wrong (or
+// not at all). Recomputing also means it keeps working while you're still
+// building a squad, where the server sends no `optimised` at all.
+document.getElementById('optimiseBtn').addEventListener('click', () => {
+    if (!workingSquad || workingSquad.some(p => p.id < 0)) {
+        alert('Fill every slot first — tap the remaining "+" slots to pick players.');
+        return;
+    }
+    const opt = optimiseSquad(workingSquad);
+    if (!opt) { alert('Need a full 15-man squad to optimise.'); return; }
+
+    const orderMap = {};
+    opt.starting.forEach((id, i) => orderMap[id] = { starting: true, position: i + 1 });
+    opt.bench.forEach((id, i) => orderMap[id] = { starting: false, position: 12 + i });
+    workingSquad.forEach(p => { const o = orderMap[p.id]; if (o) { p.starting = o.starting; p.position = o.position; } });
+
+    // Armband goes to the two highest-projected STARTERS, decided after the
+    // lineup so it can never land on someone who's just been benched.
+    const ranked = workingSquad.filter(p => p.starting)
+                               .sort((a, b) => (b.predicted || 0) - (a.predicted || 0));
+    if (ranked[0]) captainId = ranked[0].id;
+    if (ranked[1]) viceId = ranked[1].id;
+
+    showResetBtn();
+    renderPitch();
+    updatePredicted();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+    workingSquad = teamView.squad.map(p => ({ ...p }));
+    const cap = teamView.squad.find(p => p.is_captain);
+    const vice = teamView.squad.find(p => p.is_vice_captain);
+    captainId = cap ? cap.id : null;
+    viceId = vice ? vice.id : null;
+    pendingOuts = [];
+    transfersUsed = 0;
+    document.getElementById('transferBanner').classList.add('d-none');
+    if (teamView.header) teamView.header.value = +workingSquad.reduce((s, p) => s + (p.cost || 0), 0).toFixed(1);
+    if (teamView._gw0) { teamView.gw = { ...teamView._gw0 }; }
+    teamView.transfer_recs = (teamView._recs0 || []).slice();
+    document.getElementById('resetBtn').classList.add('d-none');
+    renderTransfers(teamView.transfer_recs);
+    renderPitch();
+    updatePredicted();
+    playerSearch.refresh();
+});
+
+// ---- Refresh recommended transfers (recompute from the current squad) ----
+document.getElementById('refreshTransfersBtn').addEventListener('click', () => {
+    if (!workingSquad) return;
+    const rtIcon = document.querySelector('#refreshTransfersBtn .rt-icon');
+    if (rtIcon) rtIcon.classList.add('spinning');
+    ensurePlayers().then(() => {
+        const bank = teamView.gw ? (teamView.gw.bank || 0) : 0;
+        // Preseason / draft => unlimited transfers, so nothing is a points hit.
+        const ft = teamView.built ? Infinity
+            : ((teamView.gw && typeof teamView.gw.free_transfers_est === 'number') ? teamView.gw.free_transfers_est : 1);
+        teamView.transfer_recs = computeTransfers(workingSquad, allPlayers, bank, ft);
+        teamView._recs0 = teamView.transfer_recs.slice();
+        renderTransfers(teamView.transfer_recs);
+    }).finally(() => { if (rtIcon) rtIcon.classList.remove('spinning'); });
+});
+
+// ---- Chips strip above the pitch (image cards + hover/press info) ----
+let chipTips = [];
+function renderChips(gw) {
+    const bar = document.getElementById('chipsBar');
+    const info = document.getElementById('chipInfo');
+    chipTips.forEach(t => t.remove()); chipTips = [];
+    info.classList.add('d-none'); info.textContent = ''; delete info.dataset.openFor;
+    const avail = (gw && gw.chips_available) || [];
+
+    const bench = (workingSquad || []).filter(p => !p.starting);
+    const benchPts = +bench.reduce((s, p) => s + (p.predicted || 0), 0).toFixed(1);
+    const cap = (workingSquad || []).find(p => p.id === captainId);
+    const capPts = cap ? +(cap.predicted || 0).toFixed(1) : 0;
+    const bigGains = (teamView.transfer_recs || []).filter(r => r.rating_gain >= 5).length;
+
+    const CHIPS = [
+        { key: 'bboost', name: 'Bench Boost', note: `Bench Boost: your bench also scores. Bench projected ${benchPts} pts this gameweek.` },
+        { key: '3xc', name: 'Triple Captain', note: cap ? `Triple Captain: captain scores x3. ${cap.web_name} projected ${capPts} pts (x3 = ${(capPts * 3).toFixed(1)}).` : `Triple Captain: captain scores x3 \u2014 pick a strong captain first.` },
+        { key: 'wildcard', name: 'Wildcard', note: `Wildcard: unlimited free transfers, this chip refreshes on gameweek 19.` },
+        { key: 'freehit', name: 'Free Hit', note: `Free Hit: change your whole team for one gameweek, this chip refreshes on gameweek 19. Best for blank/double gameweeks.` }
+    ];
+
+    bar.innerHTML = CHIPS.map(c => {
+        const available = avail.includes(c.key);
+        return `<div class="chip-card ${available ? 'chip-avail' : 'chip-unavail'}" tabindex="0" data-i="${c.key}">
+            <img class="chip-img" src="/static/${c.key}.png" alt="${c.name}" onerror="this.style.visibility='hidden'">
+            <div class="chip-card-name">${c.name}</div>
+            <div class="chip-status">${available ? 'Available' : 'Unavailable'}</div>
+        </div>`;
+    }).join('');
+    bar.querySelectorAll('.chip-card').forEach(card => {
+        const c = CHIPS.find(x => x.key === card.dataset.i);
+        chipTips.push(attachTip(card, c ? c.note : '', info));
+    });
+}
+
+// ---- Save team (persisted server-side against the FPL ID) ----
+// Stored on the server rather than in localStorage, so the same squad
+// loads on any device you enter this FPL ID on. It gets replaced by
+// your real picks once the gameweek deadline passes.
+document.getElementById('saveTeamBtn').addEventListener('click', () => {
+    if (!workingSquad || workingSquad.length !== 15) return;
+    if (workingSquad.some(p => p.id < 0)) {
+        alert('Fill every slot before saving — tap the remaining "+" slots to pick players.');
+        return;
+    }
+    if (teamView.gw && teamView.gw.bank < 0) {
+        alert(`You're £${Math.abs(teamView.gw.bank).toFixed(1)}m over budget — sort your transfers before saving.`);
+        return;
+    }
+    const id = getSavedId();
+    if (!id) { alert('Enter your FPL ID first.'); return; }
+
+    const snap = workingSquad.map(p => ({
+        ...p, is_captain: p.id === captainId, is_vice_captain: p.id === viceId
+    }));
+    const btn = document.getElementById('saveTeamBtn');
+    const label = btn.textContent;
+    btn.textContent = 'Saving…'; btn.disabled = true;
+
+    fetch(`/api/draft/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            bank: teamView.gw ? teamView.gw.bank : null,
+            picks: snap.map(p => ({
+                element_id: p.id, position: p.position,
+                is_captain: p.is_captain, is_vice_captain: p.is_vice_captain,
+                cost: p.cost
+            }))
+        })
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+    .then(({ ok, d }) => {
+        if (!ok) throw new Error(d.detail || 'save failed');
+        savedDraft = null;   // force a re-read next time the team loads
+        // The saved state becomes the new "actual" that Reset reverts to.
+        teamView.squad = snap.map(p => ({ ...p }));
+        if (teamView.gw) teamView._gw0 = { ...teamView.gw };
+        teamView._recs0 = (teamView.transfer_recs || []).slice();
+        document.getElementById('resetBtn').classList.add('d-none');
+        btn.textContent = 'Saved ✓';
+        setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+    })
+    .catch(e => {
+        alert(`Couldn't save your team: ${e.message}`);
+        btn.textContent = label; btn.disabled = false;
+    });
+});
+
+// ---- Recommended transfers ----
+function renderTransfers(recs) {
+    const el = document.getElementById('transferRecs');
+    if (!recs.length) { el.innerHTML = '<p class="text-muted small">No upgrades found within budget.</p>'; return; }
+    el.innerHTML = recs.map((r, i) => {
+        const tag = r.free ? '<span class="ft-tag free">free</span>' : '<span class="ft-tag hit">-4 hit</span>';
+        const cost = r.cost_change === 0 ? '\u00b10.0' : (r.cost_change > 0 ? '+' : '') + r.cost_change.toFixed(1);
+        return `<div class="transfer-rec">
+            <div class="transfer-line">
+                <span class="tr-out">${shirtImg(r.out.team_code, r.out.pos, 'shirt-sm')}${r.out.web_name}</span>
+                <span class="tr-arrow">&rarr;</span>
+                <span class="tr-in">${shirtImg(r.in.team_code, r.in.pos, 'shirt-sm')}${r.in.web_name}</span>
+            </div>
+            <div class="transfer-meta">
+                ${tag}<span>rating +${r.rating_gain}</span><span>\u00a3${cost}m</span>
+            </div>
+            <button class="btn btn-sm btn-primary make-tr w-100 mt-1" data-i="${i}">Make transfer</button>
+        </div>`;
+    }).join('');
+    el.querySelectorAll('.make-tr').forEach(btn =>
+        btn.addEventListener('click', () => performTransfer(recs[btn.dataset.i].out.id, recs[btn.dataset.i].in)));
+}
+
+// ---- Gameweek navigation ----
+document.getElementById('gwPrev').addEventListener('click', () => {
+    if (selectedEvent > (teamView.min_event || 1)) { selectedEvent--; loadTeam(); }
+});
+document.getElementById('gwNext').addEventListener('click', () => {
+    if (selectedEvent < teamView.current_event) { selectedEvent++; loadTeam(); }
+});
+
+// ---- Leagues (accordion: opening one closes the others) ----
+// News list scrolls internally, capped to the leagues LIST's actual
+// rendered height (not the whole leagues column — both columns have
+// their own equal-height heading above the list, so matching the
+// content divs is what makes the two column bottoms line up). A pure
+// flex-stretch approach doesn't work here: stretch sizes the row to
+// the TALLEST natural content, so nothing would ever need to scroll.
+// Re-run whenever either column's height can change.
+function syncNewsHeight() {
+    const leaguesSection = document.getElementById('leaguesSection');
+    const newsList = document.getElementById('newsList');
+    if (!leaguesSection || !newsList) return;
+    if (window.matchMedia('(min-width: 992px)').matches) {
+        // newsList's own top (not its heading's bottom — there's a
+        // margin gap between them) is a stable reference regardless of
+        // any height set on a previous call, since it's positioned by
+        // the content above it, not by its own size. getBoundingClientRect
+        // (not offsetHeight) so a child's bottom margin — e.g. the
+        // "No leagues found." <p> — is accounted for. A fixed height
+        // (not max-height) so the bottom lines up even when news has
+        // FEWER items than leagues has height for.
+        const contentHeight = leaguesSection.getBoundingClientRect().bottom
+            - newsList.getBoundingClientRect().top;
+        newsList.style.height = Math.max(0, contentHeight) + 'px';
+    } else {
+        newsList.style.height = '';   // stacked on mobile — CSS media query caps it instead
+    }
+}
+window.addEventListener('resize', syncNewsHeight);
+
+function renderLeagues(groups) {
+    const el = document.getElementById('leaguesList');
+    groups = groups || {};
+    const order = [['personal', 'Personal'], ['general', 'General'], ['broadcaster', 'Broadcaster']];
+    let html = '';
+    order.forEach(([key, label]) => {
+        const list = groups[key] || [];
+        if (!list.length) return;
+        html += `<div class="league-group-label">${label}</div>`;
+        html += list.map(l => `
+            <div class="league-row" data-id="${l.id}">
+                <span class="league-name">${l.name}</span>
+                <span class="league-rank">${l.rank != null ? 'Rank ' + l.rank.toLocaleString() : ''}</span>
+                <span class="league-caret">&#9662;</span>
+                <div class="league-standings d-none"></div>
+            </div>`).join('');
+    });
+    el.innerHTML = html || '<p class="text-muted small">No leagues found.</p>';
+    el.querySelectorAll('.league-row').forEach(row => {
+        row.querySelector('.league-name').addEventListener('click', () => toggleLeague(row));
+        row.querySelector('.league-caret').addEventListener('click', () => toggleLeague(row));
+    });
+    syncNewsHeight();
+}
+function toggleLeague(row) {
+    const box = row.querySelector('.league-standings');
+    const isOpen = !box.classList.contains('d-none');
+    document.querySelectorAll('.league-standings').forEach(b => { if (b !== box) b.classList.add('d-none'); });
+    if (isOpen) { box.classList.add('d-none'); syncNewsHeight(); return; }
+    if (box.dataset.loaded) { box.classList.remove('d-none'); syncNewsHeight(); return; }
+    box.innerHTML = '<div class="text-muted small p-2">Loading\u2026</div>';
+    box.classList.remove('d-none');
+    syncNewsHeight();
+    fetch(`/api/league/${row.dataset.id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.available) { box.innerHTML = '<div class="text-muted small p-2">Unavailable.</div>'; syncNewsHeight(); return; }
+            box.dataset.loaded = '1';
+            box.innerHTML = `<table class="table table-sm league-table mb-0"><tbody>${
+                data.standings.map(s => `<tr>
+                    <td class="ls-rank">${s.rank}</td>
+                    <td>${s.entry_name}<div class="ls-manager">${s.manager}</div></td>
+                    <td class="ls-total">${s.total}</td>
+                </tr>`).join('')}</tbody></table>`;
+            syncNewsHeight();
+        });
+}
+
+// ---- News feed (injury/transfer blurbs, straight from FPL's own data) ----
+// FPL stamps `news_added` only when a player's flag actually CHANGES, so a
+// quiet stretch legitimately produces no new items. What DID make it look
+// frozen is that this only ever ran once per page load, and the response
+// was cacheable — so it now polls, sends a cache-buster, and shows when it
+// last checked, so "no new news" is distinguishable from "not updating".
+const NEWS_POLL_MS = 5 * 60 * 1000;
+let newsLoading = false;
+
+// "3h ago" / "2d ago" for anything recent, an absolute date beyond a week.
+function newsStamp(iso) {
+    if (!iso) return '';
+    const t = new Date(iso);
+    if (isNaN(t)) return '';
+    const mins = Math.round((Date.now() - t.getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 60 * 24) return `${Math.floor(mins / 60)}h ago`;
+    if (mins < 60 * 24 * 7) return `${Math.floor(mins / 1440)}d ago`;
+    return t.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+// Exact date+time for the hover title, so the relative stamp is checkable.
+function newsExact(iso) {
+    if (!iso) return '';
+    const t = new Date(iso);
+    return isNaN(t) ? '' : t.toLocaleString();
+}
+
+function loadNews() {
+    if (newsLoading) return;
+    newsLoading = true;
+    const el = document.getElementById('newsList');
+    const stampEl = document.getElementById('newsUpdated');
+    const btn = document.getElementById('newsRefresh');
+    btn.classList.add('spinning');
+    // Cache-busting param as well as no-store: some mobile browsers ignore
+    // the header on a back/forward restore.
+    fetch(`/api/news?_=${Date.now()}`, { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.available || !data.stories.length) {
+                el.innerHTML = '<p class="text-muted small mb-0">No injury or transfer news right now.</p>';
+            } else {
+                el.innerHTML = data.stories.map(s => {
+                    const rel = newsStamp(s.added || s.date);
+                    const exact = newsExact(s.added || s.date);
+                    return `
+                    <div class="news-item">
+                        ${shirtImg(s.team_code, '', 'shirt-sm')}
+                        <div class="news-body">
+                            <div class="news-head">
+                                <span class="news-who"><span class="news-player">${s.player}</span>
+                                    <span class="news-team">${s.team || ''}</span></span>
+                                <span class="news-date"${exact ? ` title="${exact}"` : ''}>${rel}</span>
+                            </div>
+                            <div class="news-text">${s.headline}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+            stampEl.textContent = 'checked ' + new Date().toLocaleTimeString(
+                undefined, { hour: '2-digit', minute: '2-digit' });
+            syncNewsHeight();
+        })
+        .catch(() => { el.innerHTML = '<p class="text-muted small mb-0">Couldn’t load news.</p>'; })
+        .finally(() => { newsLoading = false; btn.classList.remove('spinning'); });
+}
+document.getElementById('newsRefresh').addEventListener('click', loadNews);
+setInterval(loadNews, NEWS_POLL_MS);
+// Coming back to a tab that's been open for hours should show current news,
+// not whatever was on screen when it was backgrounded.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { stopLivePolling(); return; }
+    loadNews();
+    if (gameweekIsLocked()) loadLiveScores(selectedEvent);
+});
+
+// ---- Underperforming players (actual returns vs xG/xGC) ----
+let underperfLoaded = false;
+let underperfData = [];
+let underperfGroup = 'attackers';   // 'attackers' (MID/FWD, goals vs xG) or 'defenders' (GK/DEF, conceded vs xGC)
+function renderUnderperfRows() {
+    const body = document.getElementById('underperfBody');
+    const rows = underperfData.filter(p =>
+        underperfGroup === 'attackers' ? (p.pos === 'MID' || p.pos === 'FWD') : (p.pos === 'DEF' || p.pos === 'GK'));
+    body.innerHTML = rows.length ? rows.map(p => `
+        <tr class="ps-row">
+            <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span></td>
+            <td>${p.pos}</td>
+            <td>${p.team_name || ''}</td>
+            <td>${p.metric}${p.season === 'last season' ? ' <span class="text-muted">(LS)</span>' : ''}</td>
+            <td>${p.expected}</td>
+            <td>${p.actual}</td>
+            <td><span class="rating-badge underperf-diff">+${p.diff}</span></td>
+            <td>£${p.cost != null ? p.cost.toFixed(1) : '–'}</td>
+            <td><div class="player-gws">${miniFixtures(p)}</div></td>
+        </tr>`).join('')
+        : '<tr><td colspan="9" class="text-muted small p-2">No underperforming players found.</td></tr>';
+}
+function loadUnderperforming() {
+    if (underperfLoaded) { renderUnderperfRows(); return; }
+    underperfLoaded = true;
+    fetch('/api/underperforming')
+        .then(res => res.json())
+        .then(data => {
+            underperfData = data.results || [];
+            renderUnderperfRows();
+        })
+        .catch(() => {
+            document.getElementById('underperfBody').innerHTML =
+                '<tr><td colspan="9" class="text-muted small p-2">Couldn’t load this table.</td></tr>';
+        });
+}
+document.querySelectorAll('#underperfPosTabs .nav-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#underperfPosTabs .nav-link').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        underperfGroup = btn.dataset.group;
+        renderUnderperfRows();
+    });
+});
+document.querySelectorAll('#playersViewTabs .nav-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#playersViewTabs .nav-link').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const under = btn.dataset.view === 'underperforming';
+        document.getElementById('playersTabSearch').classList.toggle('d-none', under);
+        document.getElementById('underperformingView').classList.toggle('d-none', !under);
+        if (under) loadUnderperforming();
+    });
+});
+
+// =====================================================================
+//  PLAYER POOL — builder, picker, shared filters
+// =====================================================================
+// The saved squad now lives on the server keyed by FPL ID (see
+// /api/draft), not in localStorage — so it follows you between
+// devices instead of being stranded on the one you built it on.
+let savedDraft = null;
+function loadDraft() {
+    const id = getSavedId();
+    if (!id) return Promise.resolve(null);
+    if (savedDraft) return Promise.resolve(savedDraft);
+    return fetch(`/api/draft/${id}`)
+        .then(r => r.json())
+        .then(d => { savedDraft = d.available ? d : null; return savedDraft; })
+        .catch(() => null);
+}
+const SQUAD_REQ = { GK: 2, DEF: 5, MID: 5, FWD: 3 };
+const BUDGET = 100.0;
+let allPlayers = null;
+
+
+function ensurePlayers() {
+    if (allPlayers) return Promise.resolve(allPlayers);
+    return fetch('/api/all_players').then(r => r.json()).then(d => { allPlayers = d.players || []; return allPlayers; });
+}
+// Empty starting squad (4-4-2, GK/DEF/MID/FWD bench) used to show the
+// normal pitch view with "Add player" slots when there's nothing to load
+// yet — replaces the old separate team-builder page.
+function emptySquad() {
+    const rows = [
+        { pos: 'GK', starting: true }, { pos: 'GK', starting: false },
+        { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: true }, { pos: 'DEF', starting: false },
+        { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: true }, { pos: 'MID', starting: false },
+        { pos: 'FWD', starting: true }, { pos: 'FWD', starting: true }, { pos: 'FWD', starting: false },
+    ];
+    let startN = 0, benchN = 0;
+    return rows.map((r, i) => ({
+        id: -(i + 1), web_name: '', pos: r.pos, team: null, team_code: null,
+        cost: 0, rating: 0, predicted: 0, form: null, status: 'a', news: '',
+        next_gameweeks: [], starting: r.starting,
+        position: r.starting ? ++startN : 11 + (++benchN),
+        is_captain: false, is_vice_captain: false, multiplier: 1,
+    }));
+}
+function setupPriceRange(which, onChange) {
+    const min = document.getElementById(which + 'PriceMin');
+    const max = document.getElementById(which + 'PriceMax');
+    const label = document.getElementById(which + 'PriceLabel');
+    const fill = document.getElementById(which + 'PriceFill');
+    const lo0 = parseFloat(min.min), hi0 = parseFloat(min.max);
+    const upd = (fire) => {
+        let lo = parseFloat(min.value), hi = parseFloat(max.value);
+        if (lo > hi) {   // stop the two handles crossing
+            if (document.activeElement === min) { hi = lo; max.value = hi; }
+            else { lo = hi; min.value = lo; }
+        }
+        label.textContent = `\u00a3${lo.toFixed(1)}m \u2013 \u00a3${hi.toFixed(1)}m`;
+        if (fill) {
+            fill.style.left = ((lo - lo0) / (hi0 - lo0) * 100) + '%';
+            fill.style.right = (100 - (hi - lo0) / (hi0 - lo0) * 100) + '%';
+        }
+        if (fire !== false) onChange();
+    };
+    min.addEventListener('input', () => upd(true));
+    max.addEventListener('input', () => upd(true));
+    upd(false);
+}
+// ---- Reusable player search (sortable table + filters) ----
+function createPlayerSearch(cfg) {
+    const c = cfg.container;
+    const pfx = cfg.sliderPrefix || 'ps';
+    c.innerHTML = `
+        <div class="ps-controls">
+            <div class="search-clear-wrap ps-search">
+                <input class="form-control form-control-sm ps-q" placeholder="Search player...">
+                <button class="search-clear" type="button">&times;</button>
+            </div>
+            <select class="form-select form-select-sm ps-pos">
+                <option value="All">All positions</option>
+                <option>GK</option><option>DEF</option><option>MID</option><option>FWD</option>
+            </select>
+            <select class="form-select form-select-sm ps-team"><option value="All">All teams</option></select>
+            <button class="btn btn-sm btn-outline-primary ps-reset">Reset</button>
+            <div class="price-range ps-price">
+                <div class="price-label">Price: <span id="${pfx}PriceLabel"></span></div>
+                <div class="range-wrap">
+                    <div class="range-fill" id="${pfx}PriceFill"></div>
+                    <input type="range" id="${pfx}PriceMin" min="3.5" max="17" step="0.5" value="3.5">
+                    <input type="range" id="${pfx}PriceMax" min="3.5" max="17" step="0.5" value="17">
+                </div>
+            </div>
+        </div>
+        <div class="ps-rec"></div>
+        <div class="ps-list"></div>`;
+    const qEl = c.querySelector('.ps-q');
+    const posEl = c.querySelector('.ps-pos');
+    const teamEl = c.querySelector('.ps-team');
+    const listEl = c.querySelector('.ps-list');
+    const recEl = c.querySelector('.ps-rec');
+    const state = { sortKey: 'rating', sortDir: 'desc', teamsFilled: false };
+
+    const COLS = [
+        { key: 'web_name', label: 'Player', noSort: true },
+        { key: 'pos', label: 'Pos', noSort: true },
+        { key: 'team_name', label: 'Team', noSort: true },
+        { key: 'form', label: 'Form', num: true },
+        { key: 'rating', label: 'Rtg', num: true },
+        { key: 'cost', label: '\u00a3m', num: true },
+        { key: 'fixtures', label: 'Next 3', noSort: true }
+    ];
+
+    function pool() { return cfg.pool() || []; }
+    function ensureTeams() {
+        if (state.teamsFilled) return;
+        const names = [...new Set(pool().map(p => p.team_name).filter(Boolean))].sort();
+        if (!names.length) return;
+        teamEl.insertAdjacentHTML('beforeend', names.map(n => `<option>${n}</option>`).join(''));
+        state.teamsFilled = true;
+    }
+    function bounds() {
+        const mn = parseFloat(document.getElementById(pfx + 'PriceMin').value);
+        const mx = parseFloat(document.getElementById(pfx + 'PriceMax').value);
+        return [Math.min(mn, mx), Math.max(mn, mx)];
+    }
+    function sortRows(rows) {
+        const k = state.sortKey, dir = state.sortDir === 'asc' ? 1 : -1;
+        const num = (COLS.find(x => x.key === k) || {}).num;
+        return rows.slice().sort((a, b) => {
+            if (num) { const va = a[k] == null ? -Infinity : a[k], vb = b[k] == null ? -Infinity : b[k]; return (va - vb) * dir; }
+            const va = (a[k] || '').toString().toLowerCase(), vb = (b[k] || '').toString().toLowerCase();
+            return va < vb ? -dir : va > vb ? dir : 0;
+        });
+    }
+    function rowHtml(p) {
+        const form = p.form != null ? p.form.toFixed(1) : '\u2013';
+        const disabled = cfg.rowDisabled ? cfg.rowDisabled(p) : false;
+        const dattr = disabled
+            ? ' style="opacity:0.4;cursor:not-allowed" title="Max 3 players from one club"'
+            : '';
+        return `<tr class="ps-row${disabled ? ' ps-disabled' : ''}"${dattr} data-id="${p.id}">
+            <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span></td>
+            <td>${p.pos}</td>
+            <td>${p.team_name || ''}</td>
+            <td>${form}</td>
+            <td><span class="rating-badge">${Math.round(p.rating)}</span></td>
+            <td>${p.cost.toFixed(1)}</td>
+            <td><div class="player-gws">${miniFixtures(p)}</div></td>
+        </tr>`;
+    }
+    function headHtml() {
+        const arrow = c => c.noSort ? '' : (state.sortKey === c.key ? (state.sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : ' <span class="ps-arrow">\u21C5</span>');
+        const ths = COLS.map(col => `<th class="${col.noSort ? '' : 'ps-sortable'}" data-key="${col.key}">${col.label}${arrow(col)}</th>`).join('');
+        return `<thead><tr>${ths}</tr></thead>`;
+    }
+    function render() {
+        ensureTeams();
+        const transfer = cfg.isTransferMode();
+        const [lo, hi] = bounds();
+        const qq = qEl.value.trim().toLowerCase();
+        let rows = pool().filter(p =>
+            (posEl.value === 'All' || p.pos === posEl.value) &&
+            (teamEl.value === 'All' || p.team_name === teamEl.value) &&
+            p.cost >= lo && p.cost <= hi &&
+            (!qq || p.web_name.toLowerCase().includes(qq)));
+        if (transfer) rows = rows.filter(cfg.transferCandidate);
+        rows = sortRows(rows).slice(0, 80);
+
+        if (transfer) {
+            const rec = pool().filter(cfg.transferCandidate).sort((a, b) => b.rating - a.rating).slice(0, 3);
+            recEl.innerHTML = rec.length
+                ? `<div class="ps-rec-label">Recommended \u2014 tap to transfer in</div>
+                   <div class="ps-list"><table class="table table-sm ps-table mb-0">${headHtml()}<tbody>${rec.map(rowHtml).join('')}</tbody></table></div>`
+                : '';
+        } else { recEl.innerHTML = ''; }
+
+        listEl.innerHTML = rows.length
+            ? `<table class="table table-sm ps-table mb-0 ${transfer ? 'ps-transfer' : ''}">${headHtml()}<tbody>${rows.map(rowHtml).join('')}</tbody></table>`
+            : '<p class="text-muted small p-2">No players match.</p>';
+        listEl.scrollTop = 0; listEl.scrollLeft = 0;
+
+        c.querySelectorAll('.ps-sortable').forEach(th => th.addEventListener('click', () => {
+            const k = th.dataset.key;
+            if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+            else { state.sortKey = k; state.sortDir = 'desc'; }
+            render();
+        }));
+        // Whole row is clickable: transfer the player in, or open their card.
+        c.querySelectorAll('.ps-row').forEach(r => r.addEventListener('click', () => {
+            if (r.classList.contains('ps-disabled')) return;
+            const p = pool().find(x => x.id === +r.dataset.id);
+            if (!p) return;
+            if (transfer) cfg.onTransfer(p); else cfg.onBrowse(p);
+        }));
+    }
+
+    qEl.addEventListener('input', render);
+    posEl.addEventListener('change', render);
+    teamEl.addEventListener('change', render);
+    wireClear(qEl, c.querySelector('.ps-search .search-clear'), render);
+    setupPriceRange(pfx, render);
+    c.querySelector('.ps-reset').addEventListener('click', () => {
+        qEl.value = ''; posEl.value = 'All'; teamEl.value = 'All';
+        c.querySelector('.ps-search .search-clear').style.display = 'none';
+        const mn = document.getElementById(pfx + 'PriceMin'), mx = document.getElementById(pfx + 'PriceMax');
+        mn.value = 3.5; mx.value = 17; mn.dispatchEvent(new Event('input'));
+    });
+    return { refresh: render };
+}
+
+const playerSearch = createPlayerSearch({
+    container: document.getElementById('playerSearch'),
+    sliderPrefix: 'ps',
+    pool: () => allPlayers || [],
+    // Open slots (marked-out players OR unfilled slots from the initial
+    // pick) put the table into transfer mode, so tapping a row drops the
+    // player straight into a matching slot instead of opening their card.
+    isTransferMode: () => pendingOuts.length > 0 || hasEmptySlots(),
+    transferCandidate: (p) => {
+        // Every open position is fair game at once — e.g. mark a DEF and
+        // a MID out, and both DEF and MID candidates show up together,
+        // not just whichever was marked most recently.
+        const positions = new Set(pendingOuts.map(o => o.pos));
+        emptySlots().forEach(s => positions.add(s.pos));
+        if (!positions.size) return true;
+        if (!positions.has(p.pos)) return false;
+        const ownedIds = new Set(workingSquad.map(x => x.id));
+        return !ownedIds.has(p.id);
+    },
+    rowDisabled: (p) => {
+        if (!pendingOuts.length && !hasEmptySlots()) return false;
+        // Other slots already marked for transfer out don't count against the
+        // club limit — they won't be left in the team once resolved.
+        const leaving = new Set(pendingOuts.map(o => o.id));
+        return workingSquad.filter(x => x.team === p.team && !leaving.has(x.id)).length >= 3;
+    },
+    onTransfer: (p) => resolveTransfer(p),
+    onBrowse: (p) => {
+        const owned = workingSquad && workingSquad.find(x => x.id === p.id);
+        openPlayerModal(owned || p, !!owned);
+    }
+});
+
+// Same search table powers the Players tab (browse only).
+const playersTabSearch = createPlayerSearch({
+    container: document.getElementById('playersTabSearch'),
+    sliderPrefix: 'pt',
+    pool: () => allPlayers || [],
+    isTransferMode: () => false,
+    transferCandidate: () => true,
+    onTransfer: () => {},
+    onBrowse: (p) => {
+        const owned = workingSquad && workingSquad.find(x => x.id === p.id);
+        openPlayerModal(owned || p, !!owned);
+    }
+});
+
+// (Building a squad is now done directly on the pitch: empty slots are
+// filled via the same transfer-in flow used for swaps, then "Save team"
+// persists it \u2014 see emptySquad() / saveTeamBtn.)
+
+// ---- Client-side optimise / transfers for a built team ----
+function optimiseSquad(squad) {
+    const gks = squad.filter(p => p.pos === 'GK').sort((a, b) => b.predicted - a.predicted);
+    const outs = { DEF: [], MID: [], FWD: [] };
+    squad.filter(p => p.pos !== 'GK').forEach(p => { if (outs[p.pos]) outs[p.pos].push(p); });
+    Object.values(outs).forEach(a => a.sort((x, y) => y.predicted - x.predicted));
+    if (gks.length < 2 || (outs.DEF.length + outs.MID.length + outs.FWD.length) < 10) return null;
+    const startGk = gks[0], benchGk = gks[1];
+    const MIN = { DEF: 3, MID: 2, FWD: 1 }, MAX = { DEF: 5, MID: 5, FWD: 3 };
+    let starters = [], counts = { DEF: 0, MID: 0, FWD: 0 };
+    ['DEF', 'MID', 'FWD'].forEach(pos => { starters = starters.concat(outs[pos].slice(0, MIN[pos])); counts[pos] = MIN[pos]; });
+    let pool = [];
+    ['DEF', 'MID', 'FWD'].forEach(pos => { pool = pool.concat(outs[pos].slice(MIN[pos])); });
+    pool.sort((a, b) => b.predicted - a.predicted);
+    for (const p of pool) { if (starters.length >= 10) break; if (counts[p.pos] < MAX[p.pos]) { starters.push(p); counts[p.pos]++; } }
+    const starterIds = new Set(starters.map(p => p.id)); starterIds.add(startGk.id);
+    const benchOut = squad.filter(p => !starterIds.has(p.id) && p.pos !== 'GK').sort((a, b) => b.predicted - a.predicted);
+    const order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    const starting = [startGk].concat(starters).sort((a, b) => (order[a.pos] - order[b.pos]) || (b.predicted - a.predicted));
+    return { starting: starting.map(p => p.id), bench: [benchGk.id].concat(benchOut.map(p => p.id)) };
+}
+function computeTransfers(squad, pool, bank, freeTransfers, maxRecs) {
+    maxRecs = maxRecs || 3;
+    const owned = new Set(squad.map(p => p.id));
+    const byPos = {};
+    pool.forEach(p => { (byPos[p.pos] = byPos[p.pos] || []).push(p); });
+    Object.values(byPos).forEach(a => a.sort((x, y) => y.rating - x.rating));
+    let budget = bank, recs = [];
+    const weak = [...squad].sort((a, b) => a.rating - b.rating);
+    for (const w of weak) {
+        if (recs.length >= maxRecs) break;
+        const afford = w.cost + budget;
+        for (const c of (byPos[w.pos] || [])) {
+            if (owned.has(c.id)) continue;
+            if (c.rating <= w.rating) break;
+            if (c.cost <= afford) {
+                recs.push({ out: w, in: c, rating_gain: +(c.rating - w.rating).toFixed(1),
+                            cost_change: +(c.cost - w.cost).toFixed(1), free: recs.length < freeTransfers });
+                owned.add(c.id); budget -= (c.cost - w.cost); break;
+            }
+        }
+    }
+    return recs;
+}
+function showBuiltTeam(picked, leagues, header) {
+    const byId = new Map((allPlayers || []).map(p => [p.id, p]));
+    const squad = picked.map(p => {
+        const fresh = byId.get(p.id) || {};
+        return { ...p, ...fresh, is_captain: false, is_vice_captain: false, multiplier: 1 };
+    });
+
+    // Keep a saved lineup if present and legal; otherwise auto-optimise.
+    let useSaved = picked.some(p => 'starting' in p) && picked.filter(p => p.starting).length === 11;
+    if (useSaved) {
+        picked.forEach(sp => { const p = squad.find(x => x.id === sp.id); if (p) { p.starting = !!sp.starting; p.position = sp.position; } });
+        useSaved = isLegalXI(squad);
+    }
+    if (!useSaved) {
+        const opt = optimiseSquad(squad);
+        if (opt) {
+            const map = {};
+            opt.starting.forEach((id, i) => map[id] = { starting: true, position: i + 1 });
+            opt.bench.forEach((id, i) => map[id] = { starting: false, position: 12 + i });
+            squad.forEach(p => { const o = map[p.id]; if (o) { p.starting = o.starting; p.position = o.position; } });
+        } else {
+            squad.forEach((p, i) => { p.starting = i < 11; p.position = i + 1; });
+        }
+    }
+
+    const savedCap = picked.find(p => p.is_captain);
+    const savedVice = picked.find(p => p.is_vice_captain);
+    const ranked = [...squad].sort((a, b) => b.predicted - a.predicted);
+    const capId = savedCap ? savedCap.id : (ranked[0] ? ranked[0].id : null);
+    const vId = savedVice ? savedVice.id : (ranked[1] ? ranked[1].id : null);
+    if (capId) { const cc = squad.find(p => p.id === capId); if (cc) cc.is_captain = true; }
+    if (vId) { const vv = squad.find(p => p.id === vId); if (vv) vv.is_vice_captain = true; }
+
+    const spent = +squad.reduce((s, p) => s + p.cost, 0).toFixed(1);
+    const bank = +(BUDGET - spent).toFixed(1);
+    const predGw = +squad.filter(p => p.starting).reduce((s, p) => s + p.predicted * (p.is_captain ? 2 : 1), 0).toFixed(1);
+    // Still has empty slots — suppress optimise/recommendation noise
+    // built for a complete squad; filling slots is done via the pitch.
+    const isBuilding = squad.some(p => p.id < 0);
+    renderTeam({
+        available: true, built: true,
+        // Use the manager's real team name from the FPL entry - it's available
+        // even in preseason, and "Pick your squad" told you nothing you didn't
+        // already know from the empty slots in front of you.
+        header: { name: (header && header.name) || 'Your team',
+                  manager: (header && header.manager) || '',
+                  value: spent, bank: bank },
+        gw: { event: null, points: null, predicted_points: predGw, bank: bank, value: spent,
+              chips_available: ['wildcard', 'freehit', 'bboost', '3xc'] },
+        squad: squad,
+        recommended: isBuilding ? { captain: null, vice: null } : { captain: capId, vice: vId },
+        optimised: isBuilding ? null : optimiseSquad(squad),
+        // Preseason/draft = unlimited transfers, so nothing is a hit here.
+        transfer_recs: isBuilding ? [] : computeTransfers(squad, allPlayers, bank, Infinity),
+        leagues: leagues || {}, current_event: null, min_event: 1
+    });
+}
+
+// ---- Reusable tooltip (body-level so nothing traps it) ----
+// `panel`, if given, is an element that takes the text INLINE on mobile
+// instead of the floating tip — used by the chips so their explanation
+// appears directly under the chips row rather than over the page middle.
+function attachTip(el, text, panel) {
+    const tip = document.createElement('div');
+    tip.className = 'info-tip';
+    tip.textContent = text;
+    tip.style.display = 'none';
+    document.body.appendChild(tip);
+    const isMobile = () => window.matchMedia('(max-width: 767.98px)').matches;
+    const usePanel = () => !!panel && isMobile();
+    const panelKey = el.dataset.i || text;
+    function show() {
+        if (usePanel()) {
+            tip.style.display = 'none';
+            panel.textContent = text;
+            panel.dataset.openFor = panelKey;
+            panel.classList.remove('d-none');
+            return;
+        }
+        tip.style.display = 'block';
+        if (window.matchMedia('(max-width: 576px)').matches) {
+            Object.assign(tip.style, {
+                position: 'fixed', top: '50%', left: '50%', right: 'auto', bottom: 'auto',
+                transform: 'translate(-50%, -50%)', width: '88vw', maxWidth: '320px', zIndex: '3000'
+            });
+        } else {
+            const r = el.getBoundingClientRect();
+            Object.assign(tip.style, {
+                position: 'fixed', top: (r.bottom + 6) + 'px', left: r.left + 'px',
+                right: 'auto', bottom: 'auto', transform: 'none', width: '240px', zIndex: '3000'
+            });
+        }
+    }
+    function hide() {
+        tip.style.display = 'none';
+        // Only close the shared panel if it's showing THIS tip's text —
+        // another chip may have taken it over since.
+        if (panel && panel.dataset.openFor === panelKey) {
+            panel.classList.add('d-none');
+            panel.textContent = '';
+            delete panel.dataset.openFor;
+        }
+    }
+    function isOpen() {
+        return usePanel() ? panel.dataset.openFor === panelKey : tip.style.display !== 'none';
+    }
+    // Hover is a desktop affordance; on mobile a tap fires mouseenter first,
+    // which would open the panel and let the click immediately close it.
+    el.addEventListener('mouseenter', () => { if (!usePanel()) show(); });
+    el.addEventListener('mouseleave', () => { if (!window.matchMedia('(max-width: 576px)').matches) hide(); });
+    el.addEventListener('click', e => { e.stopPropagation(); isOpen() ? hide() : show(); });
+    document.addEventListener('click', hide);
+    window.addEventListener('resize', hide);
+    return tip;
+}
+document.querySelectorAll('.info-icon').forEach(el => attachTip(el, el.dataset.tip));
+
+// =====================================================================
+//  FIXTURE ROTATOR
+// =====================================================================
+const rotationHeader = document.getElementById('rotationHeader');
+const rotationBody = document.getElementById('rotationBody');
+const pairsContainer = document.getElementById('pairsContainer');
+let currentCategory = 'defender';
+let selectedTeams = new Set();
+let latestRotationData = null;
+
+function colorFor(value, min, max) {
+    if (max === min) return 'hsl(120, 70%, 85%)';
+    const ratio = (value - min) / (max - min);
+    const hue = 120 - (ratio * 120);
+    return `hsl(${hue}, 70%, 82%)`;
+}
+
+function allDifficulties(data) {
+    const values = [];
+    data.teams.forEach(t => Object.values(t.fixtures).forEach(f => values.push(f.difficulty)));
+    return values;
+}
+
+function fixtureCell(fixture, min, max) {
+    if (!fixture) return '<td></td>';
+    const color = colorFor(fixture.difficulty, min, max);
+    return `<td><span class="fixture-cell" style="background-color:${color}">${fixture.opponent}</span></td>`;
+}
+
+function renderPairRow(teamName, teamCode, fixtures, gameweeks, min, max) {
+    let cells = `<span class="pair-team-label">${shirtImg(teamCode, null, 'shirt-sm')}${teamName}</span>`;
+    gameweeks.forEach(gw => {
+        const f = fixtures[gw];
+        if (!f) { cells += '<span style="width:44px;"></span>'; return; }
+        const color = colorFor(f.difficulty, min, max);
+        cells += `<span class="fixture-cell" style="background-color:${color}; width:44px; text-align:center;">${f.opponent}</span>`;
+    });
+    return `<div class="pair-row">${cells}</div>`;
+}
+
+function recSlot(pl) {
+    if (!pl) return '<span class="rec-empty">&mdash;</span>';
+    return `<span class="rec-slot">
+        ${shirtImg(pl.team_code, pl.position, 'shirt-sm')}
+        <span class="player-name">${pl.web_name ?? ''}</span>
+        <span class="rec-rating">${pl.rating != null ? Math.round(pl.rating) : '-'}</span>
+        <span class="rec-cost">${pl.cost != null ? '£' + pl.cost.toFixed(1) + 'm' : ''}</span>
+    </span>`;
+}
+
+function recPlayersHtml(positionPairs) {
+    if (!positionPairs || !positionPairs.length) return '';
+    const rows = positionPairs.map(pp => `
+        <span class="rec-pos">${pp.label}</span>
+        ${recSlot(pp.player_a)}
+        <span class="rec-plus">+</span>
+        ${recSlot(pp.player_b)}
+    `).join('');
+    return `<div class="rec-grid">${rows}</div>`;
+}
+
+function renderRotationTable() {
+    if (!latestRotationData) return;
+    const data = latestRotationData;
+    const gameweeks = data.gameweeks.map(String);
+    const values = allDifficulties(data);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    rotationHeader.innerHTML = '<th class="team-col">Team</th>';
+    gameweeks.forEach(gw => {
+        const th = document.createElement('th');
+        th.textContent = `GW${gw}`;
+        rotationHeader.appendChild(th);
+    });
+
+    const sortedTeams = [...data.teams].sort((a, b) => {
+        const aSel = selectedTeams.has(a.team_name);
+        const bSel = selectedTeams.has(b.team_name);
+        if (aSel && !bSel) return -1;
+        if (!aSel && bSel) return 1;
+        return 0;
+    });
+
+    rotationBody.innerHTML = '';
+    sortedTeams.forEach(team => {
+        const tr = document.createElement('tr');
+        if (selectedTeams.has(team.team_name)) tr.classList.add('selected-team');
+        let rowHtml = `<td class="team-col">${shirtImg(team.team_code, null, 'shirt-sm')} ${team.team_name}</td>`;
+        gameweeks.forEach(gw => { rowHtml += fixtureCell(team.fixtures[gw], min, max); });
+        tr.innerHTML = rowHtml;
+        tr.querySelector('.team-col').addEventListener('click', () => {
+            if (selectedTeams.has(team.team_name)) selectedTeams.delete(team.team_name);
+            else selectedTeams.add(team.team_name);
+            renderRotationTable();
+        });
+        rotationBody.appendChild(tr);
+    });
+}
+
+function loadRotation() {
+    fetch(`/api/rotation?category=${currentCategory}`)
+        .then(res => res.json())
+        .then(data => {
+            latestRotationData = data;
+            const gameweeks = data.gameweeks.map(String);
+            const values = allDifficulties(data);
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+
+            pairsContainer.innerHTML = '';
+            const buildPairCard = (pair) => {
+                const card = document.createElement('div');
+                card.className = 'pair-card';
+                const positionPairs = pair.position_pairs || [];
+                card.innerHTML = `
+                    ${renderPairRow(pair.team_a, pair.team_a_code, pair.team_a_fixtures, gameweeks, min, max)}
+                    ${renderPairRow(pair.team_b, pair.team_b_code, pair.team_b_fixtures, gameweeks, min, max)}
+                    ${positionPairs.length ? `<div class="rec-players">
+                        <div class="pair-meta">Rotate these players</div>
+                        ${recPlayersHtml(positionPairs)}
+                    </div>` : ''}
+                `;
+                return card;
+            };
+
+            const INITIAL_PAIRS = 2;
+            data.pairs.slice(0, INITIAL_PAIRS).forEach(pair => pairsContainer.appendChild(buildPairCard(pair)));
+
+            const remaining = data.pairs.slice(INITIAL_PAIRS);
+            if (remaining.length) {
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'btn btn-outline-primary btn-sm';
+                let expanded = false;
+                let extraCards = [];
+                const renderToggle = () => { toggleBtn.textContent = expanded ? 'Show less' : `Show all (${data.pairs.length})`; };
+                toggleBtn.addEventListener('click', () => {
+                    if (expanded) { extraCards.forEach(c => c.remove()); extraCards = []; }
+                    else { extraCards = remaining.map(pair => { const card = buildPairCard(pair); pairsContainer.insertBefore(card, toggleBtn); return card; }); }
+                    expanded = !expanded;
+                    renderToggle();
+                });
+                renderToggle();
+                pairsContainer.appendChild(toggleBtn);
+            }
+
+            renderRotationTable();
+        });
+}
+
+document.querySelectorAll('#rotationTabs .nav-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#rotationTabs .nav-link').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentCategory = btn.dataset.category;
+        loadRotation();
+    });
+});
+
+// =====================================================================
+//  AI BEST XV
+// =====================================================================
+// Stateless per gameweek: the server solves a fresh budget-constrained
+// optimum and freezes it at the deadline. A stored snapshot is the
+// record of what was predicted BEFORE the gameweek, so it's shown in
+// preference to re-solving; only the upcoming gameweek is solved live.
+let aiGw = null;            // gameweek currently on screen
+let aiBounds = { min: 1, max: null };
+let aiLoaded = false;
+let aiReqSeq = 0;           // guards against out-of-order fetch responses
+
+// The one fixture this squad is picked FOR - opponent, home/away, and the same
+// difficulty colour the rest of the app uses. Without it a projected score is a
+// bare number with no way to judge whether it looks reasonable.
+// One box per player, same visual language as the My Team pitch: coloured by
+// fixture difficulty, projection on top, opponent underneath. Two separate
+// pills sitting side by side read as clutter at this size.
+function aiFixtureBox(p, gameweek) {
+    const gws = p.next_gameweeks || [];
+    const g = (gameweek != null && gws.find(x => x.event === gameweek)) || gws[0];
+    const colour = (g && g.difficulty != null) ? colorFor(g.difficulty, 1, 5) : '#eee';
+    const val = p.actual_points != null
+        ? `<span class="ai-actual">${p.actual_points}</span>`
+        : `<span>${p.predicted != null ? p.predicted.toFixed(1) : '\u2013'}</span>`;
+    // Opponent on top, score underneath - same reading order as the My Team
+    // pitch, so the two look like one component rather than two conventions.
+    const fix = g ? `<b>${g.opponent || ''} ${haTag(g)}</b>` : '<b>&nbsp;</b>';
+    const title = g ? `GW${g.event}` : '';
+    return `<span class="ai-mini" style="background:${colour}" title="${title}">${fix}${val}</span>`;
+}
+
+function aiPlayerCard(p, onBench, gameweek) {
+    const badge = p.is_captain ? '<span class="cap-badge">C</span>'
+                : (p.is_vice_captain ? '<span class="cap-badge vice">V</span>' : '');
+    const posLabel = onBench ? `<div class="bench-pos">${p.pos || ''}</div>` : '';
+    return `<div class="player" style="position:relative">
+        ${posLabel}${badge}
+        <div class="player-kit">${shirtImg(p.team_code, p.pos, 'kit')}</div>
+        <div class="player-name-pill">${p.web_name}</div>
+        <div class="player-gws">${aiFixtureBox(p, gameweek)}</div>
+    </div>`;
+}
+
+function renderAiPitch(squad, gameweek) { renderAiPitchInto('aiPitch', 'aiBench', squad, gameweek); }
+
+// Shared by the Best XI and AI Manager tabs - same card, same layout.
+function renderAiPitchInto(pitchId, benchId, squad, gameweek) {
+    const starters = squad.filter(p => p.starting);
+    const bench = squad.filter(p => !p.starting);
+    document.getElementById(pitchId).innerHTML =
+        ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+            const line = starters.filter(p => p.pos === pos);
+            return line.length
+                ? `<div class="pitch-row">${line.map(p => aiPlayerCard(p, false, gameweek)).join('')}</div>`
+                : '';
+        }).join('');
+    document.getElementById(benchId).innerHTML =
+        `<div class="bench-label">Bench</div>
+         <div class="bench-row">${bench.map(p => aiPlayerCard(p, true, gameweek)).join('')}</div>`;
+}
+
+function renderAiSquadTable(squad) {
+    document.getElementById('aiSquadBody').innerHTML = squad.map(p => {
+        const arm = p.is_captain ? ' <span class="ai-arm">C</span>'
+                  : (p.is_vice_captain ? ' <span class="ai-arm vice">V</span>' : '');
+        return `<tr class="${p.starting ? '' : 'ai-benched'}">
+            <td class="ps-name">${shirtImg(p.team_code, p.pos, 'shirt-sm')}<span>${p.web_name}</span>${arm}</td>
+            <td>${p.pos || ''}</td>
+            <td>${p.team_name || ''}</td>
+            <td>${p.cost != null ? p.cost.toFixed(1) : '–'}</td>
+            <td>${p.predicted != null ? p.predicted.toFixed(1) : '–'}</td>
+            <td>${p.actual_points != null ? p.actual_points : '–'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderAiChips(d) {
+    const el = document.getElementById('aiChips');
+    const spare = (d.budget != null && d.squad_cost != null)
+        ? (d.budget - d.squad_cost) : null;
+    // Formation is readable off the pitch and the frozen/live distinction is
+    // already implied by the gameweek arrows and whether actual points exist,
+    // so neither earns a chip here.
+    el.innerHTML =
+          chip('Squad cost', d.squad_cost != null ? '£' + d.squad_cost.toFixed(1) + 'm' : '–')
+        + chip('Unspent', spare != null ? '£' + spare.toFixed(1) + 'm' : '–')
+        + chip('Predicted', d.predicted_points != null ? d.predicted_points.toFixed(1) : '–', true)
+        + (d.actual_points != null ? chip('Actual', d.actual_points) : '');
+}
+
+function loadAi(gw) {
+    const stateEl = document.getElementById('aiState');
+    const content = document.getElementById('aiContent');
+    const q = gw ? `?gameweek=${gw}` : '';
+    stateEl.classList.add('d-none');
+    // Step the label immediately rather than on response: otherwise two
+    // quick taps on the arrow both read the pre-fetch gameweek and ask
+    // for the same one twice.
+    const seq = ++aiReqSeq;
+    if (gw) { aiGw = gw; updateAiNav(); }
+    fetch(`/api/ai/best_xv${q}`)
+        .then(r => r.json())
+        .then(d => {
+            if (seq !== aiReqSeq) return;   // superseded by a newer request
+            if (!d.available) {
+                content.classList.add('d-none');
+                stateEl.textContent = d.detail || 'No AI squad available.';
+                stateEl.classList.remove('d-none');
+                if (d.gameweek) { aiGw = d.gameweek; updateAiNav(); }
+                return;
+            }
+            aiGw = d.gameweek;
+            updateAiNav();
+            content.classList.remove('d-none');
+            renderAiChips(d);
+            renderAiPitch(d.squad, d.gameweek);
+            renderAiSquadTable(d.squad);
+        })
+        .catch(() => {
+            if (seq !== aiReqSeq) return;
+            content.classList.add('d-none');
+            stateEl.textContent = 'Couldn’t load the AI squad.';
+            stateEl.classList.remove('d-none');
+        });
+}
+
+function updateAiNav() {
+    document.getElementById('aiGwLabel').textContent = aiGw ? `GW${aiGw}` : 'GW–';
+    document.getElementById('aiPrev').disabled = !aiGw || aiGw <= aiBounds.min;
+    document.getElementById('aiNext').disabled = !aiGw || (aiBounds.max != null && aiGw >= aiBounds.max);
+}
+document.getElementById('aiPrev').addEventListener('click', () => { if (aiGw > aiBounds.min) loadAi(aiGw - 1); });
+document.getElementById('aiNext').addEventListener('click', () => { if (aiBounds.max == null || aiGw < aiBounds.max) loadAi(aiGw + 1); });
+
+function loadAiHistory() {
+    fetch('/api/ai/history').then(r => r.json()).then(d => {
+        const body = document.getElementById('aiHistoryBody');
+        const rows = d.snapshots || [];
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="6" class="text-muted small p-2">'
+                + 'No gameweeks recorded yet &mdash; the first snapshot is frozen when the next deadline passes.</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(s => {
+            const diff = (s.actual_points != null && s.predicted_points != null)
+                ? (s.actual_points - s.predicted_points) : null;
+            const diffCls = diff == null ? '' : (diff >= 0 ? 'ai-over' : 'ai-under');
+            return `<tr>
+                <td>GW${s.gameweek}</td>
+                <td>${s.formation}</td>
+                <td>£${s.squad_cost.toFixed(1)}m</td>
+                <td>${s.predicted_points.toFixed(1)}</td>
+                <td>${s.actual_points != null ? s.actual_points : '<span class="text-muted">pending</span>'}</td>
+                <td>${diff == null ? '–' : `<span class="${diffCls}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}</span>`}</td>
+            </tr>`;
+        }).join('');
+    }).catch(() => {});
+}
+
+function ensureAi() {
+    if (aiLoaded) return;
+    // Latch only once the clock has actually answered. Setting it up front
+    // means a single failed request leaves the view permanently blank, because
+    // every later visit short-circuits on a load that never happened.
+    // The season clock decides which gameweek to open on, and caps the
+    // forward arrow at the one currently being picked.
+    fetch('/api/ai/status').then(r => r.json()).then(s => {
+        aiLoaded = true;
+        aiBounds.max = s.next_gameweek || s.current_gameweek || null;
+        loadAi(s.next_gameweek || s.current_gameweek || null);
+    }).catch(() => loadAi(null));
+    loadAiHistory();
+}
+
+
+// =====================================================================
+//  AI MANAGER
+// =====================================================================
+let mgrGw = null, mgrBounds = { min: 1, max: null }, mgrLoaded = false, mgrSeq = 0;
+
+function renderMgrMoves(d) {
+    const el = document.getElementById('mgrMoves');
+    const moves = d.transfers || [];
+    if (!moves.length) {
+        el.innerHTML = '<p class="text-muted small mb-0">No transfer was worth making &mdash; '
+            + 'nothing cleared the projected-gain threshold, so the free transfer is banked.</p>';
+        return;
+    }
+    el.innerHTML = moves.map(t => `
+        <div class="transfer-rec">
+            <div class="transfer-line">
+                <span class="tr-out">${t.out}</span>
+                <span class="tr-arrow">&rarr;</span>
+                <span class="tr-in">${t.in}</span>
+            </div>
+            <div class="transfer-meta">
+                ${t.free ? '<span class="ft-tag free">free</span>'
+                         : '<span class="ft-tag hit">-4 hit</span>'}
+                <span>+${t.gain} projected</span>
+            </div>
+            <div class="mgr-why">${t.rationale || ''}</div>
+        </div>`).join('');
+}
+
+const CHIP_NAMES = { bboost: 'Bench Boost', '3xc': 'Triple Captain',
+                     wildcard: 'Wildcard', freehit: 'Free Hit' };
+
+function renderMgrChipPlan(d) {
+    const el = document.getElementById('mgrChipPlan');
+    const plan = d.chip_plan;
+    if (!plan) { el.innerHTML = '<p class="text-muted small mb-0">No chip data recorded.</p>'; return; }
+
+    // Same chip cards as My Team, and in the same place - above the pitch, so
+    // the squad and the chips available to it read as one block.
+    const used = plan.used || [];
+    const available = plan.available || [];
+    const bar = document.getElementById('mgrChipsBar');
+    if (bar) {
+        bar.innerHTML = Object.keys(CHIP_NAMES).map(key => {
+            const isAvailable = available.includes(key) && !used.includes(key);
+            const playing = d.chip === key;
+            return `<div class="chip-card ${isAvailable ? 'chip-avail' : 'chip-unavail'}${playing ? ' chip-playing' : ''}" data-i="${key}">
+                <img class="chip-img" src="/static/${key}.png" alt="${CHIP_NAMES[key]}"
+                     onerror="this.style.visibility='hidden'">
+                <div class="chip-card-name">${CHIP_NAMES[key]}</div>
+                <div class="chip-status">${playing ? 'Playing' : (isAvailable ? 'Available' : 'Used')}</div>
+            </div>`;
+        }).join('');
+    }
+
+    let html = '';
+    if (d.chip) html += `<div class="mgr-chip-play">Playing <strong>${CHIP_NAMES[d.chip] || d.chip}</strong> this gameweek</div>`;
+    html += (plan.notes || []).map(n => `
+        <div class="mgr-chip-note ${n.ready ? 'ready' : ''}">
+            <span class="mgr-chip-name">${CHIP_NAMES[n.chip] || n.chip}</span>
+            <span class="mgr-chip-detail">${n.detail}</span>
+        </div>`).join('');
+    const up = plan.upcoming || [];
+    if (up.length) {
+        html += '<div class="mgr-upcoming">Watching: '
+            + up.map(o => `GW${o.gameweek} ${o.is_double ? 'double' : 'blank'}`).join(', ')
+            + '</div>';
+    }
+    el.innerHTML = html || '<p class="text-muted small mb-0">All chips held.</p>';
+}
+
+function loadMgr(gw) {
+    const stateEl = document.getElementById('mgrState');
+    const content = document.getElementById('mgrContent');
+    const seq = ++mgrSeq;
+    if (gw) { mgrGw = gw; updateMgrNav(); }
+    stateEl.classList.add('d-none');
+    fetch(`/api/ai/manager${gw ? '?gameweek=' + gw : ''}`)
+        .then(r => r.json())
+        .then(d => {
+            if (seq !== mgrSeq) return;
+            if (!d.available) {
+                content.classList.add('d-none');
+                stateEl.textContent = d.detail || 'No AI Manager data.';
+                stateEl.classList.remove('d-none');
+                if (d.gameweek) { mgrGw = d.gameweek; updateMgrNav(); }
+                return;
+            }
+            mgrGw = d.gameweek; updateMgrNav();
+            content.classList.remove('d-none');
+            const value = d.squad_cost != null ? d.squad_cost : d.value;
+            document.getElementById('mgrChips').innerHTML =
+                  chip('Total points', d.total_points != null ? d.total_points : '–')
+                + chip('Squad value', value != null ? '£' + value.toFixed(1) + 'm' : '–')
+                + chip('Bank', d.bank != null ? '£' + d.bank.toFixed(1) + 'm' : '–')
+                + chip('Predicted', d.predicted_points != null ? d.predicted_points.toFixed(1) : '–', true)
+                + (d.points != null ? chip('Actual', d.points) : '')
+                + (d.hits ? chip('Hits', '−' + d.hits) : '');
+            renderAiPitchInto('mgrPitch', 'mgrBench', d.squad || [], d.gameweek);
+            renderMgrMoves(d);
+            renderMgrChipPlan(d);
+        })
+        .catch(() => {
+            if (seq !== mgrSeq) return;
+            content.classList.add('d-none');
+            stateEl.textContent = 'Couldn’t load the AI Manager.';
+            stateEl.classList.remove('d-none');
+        });
+}
+
+function updateMgrNav() {
+    document.getElementById('mgrGwLabel').textContent = mgrGw ? `GW${mgrGw}` : 'GW–';
+    document.getElementById('mgrPrev').disabled = !mgrGw || mgrGw <= mgrBounds.min;
+    document.getElementById('mgrNext').disabled = !mgrGw || (mgrBounds.max != null && mgrGw >= mgrBounds.max);
+}
+document.getElementById('mgrPrev').addEventListener('click', () => { if (mgrGw > mgrBounds.min) loadMgr(mgrGw - 1); });
+document.getElementById('mgrNext').addEventListener('click', () => { if (mgrBounds.max == null || mgrGw < mgrBounds.max) loadMgr(mgrGw + 1); });
+
+function loadMgrHistory() {
+    fetch('/api/ai/manager/history').then(r => r.json()).then(d => {
+        const body = document.getElementById('mgrHistoryBody');
+        const rows = d.history || [];
+        body.innerHTML = rows.length ? rows.map(h => `
+            <tr>
+                <td>GW${h.gameweek}</td>
+                <td>${h.value != null ? '£' + h.value.toFixed(1) + 'm' : '–'}</td>
+                <td>${h.bank != null ? '£' + h.bank.toFixed(1) + 'm' : '–'}</td>
+                <td>${h.active_chip || '–'}</td>
+                <td>${h.predicted_points != null ? h.predicted_points.toFixed(1) : '–'}</td>
+                <td>${h.points != null ? h.points : '<span class="text-muted">pending</span>'}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="6" class="text-muted small p-2">No gameweeks played yet &mdash; '
+              + 'the bot commits its first squad when the next deadline passes.</td></tr>';
+    }).catch(() => {});
+}
+
+function ensureMgr() {
+    if (mgrLoaded) return;
+    // Same reasoning as ensureAi: latch on success, not on intent.
+    fetch('/api/ai/status').then(r => r.json()).then(s => {
+        mgrLoaded = true;
+        mgrBounds.max = s.next_gameweek || s.current_gameweek || null;
+        loadMgr(s.next_gameweek || s.current_gameweek || null);
+    }).catch(() => loadMgr(null));
+    loadMgrHistory();
+}
+
+// (Preseason/in-season is decided server-side from the first gameweek
+// deadline — see detect_mode() — so there's no toggle to render here.)
+
+// ---- Initial load ----
+restoreView();
+if (getSavedId()) loadTeam(); else showPrompt();
+ensurePlayers().then(() => playersTabSearch.refresh());
+loadRotation();
+loadNews();

@@ -1,0 +1,120 @@
+        <!-- ============ AI TEAMS ============ -->
+        <div id="pane-ai-teams" class="tab-pane d-none">
+            <ul class="nav nav-pills mb-3" id="aiViewTabs">
+                <li class="nav-item"><button class="nav-link active" data-view="mgr">AI Manager</button></li>
+                <li class="nav-item"><button class="nav-link" data-view="xi">AI Best XI</button></li>
+            </ul>
+
+            <div id="aiViewMgr">
+
+            <div class="ai-head">
+                <div class="ai-head-text">
+                    <h4 class="ai-title mb-1">AI Manager</h4>
+                    <p class="text-muted small mb-0">
+                        A bot playing the real game week to week &mdash; one squad carried forward,
+                        a bank, free transfers, point hits and one set of chips. Transfers are judged
+                        on projected points over the next few gameweeks, not just the next one.
+                    </p>
+                </div>
+                <div class="ai-gw-nav" id="mgrGwNav">
+                    <button id="mgrPrev" class="gw-btn">&#9664;</button>
+                    <span id="mgrGwLabel" class="gw-label">GW</span>
+                    <button id="mgrNext" class="gw-btn">&#9654;</button>
+                </div>
+            </div>
+
+            <div id="mgrState" class="alert alert-secondary d-none"></div>
+
+            <div id="mgrContent" class="d-none">
+                <div class="stat-chips" id="mgrChips"></div>
+                <div class="ai-body row g-3 mt-1">
+                    <div class="col-lg-6">
+                        <div id="mgrChipsBar" class="chips-bar mb-2"></div>
+                        <div class="pitch-wrap">
+                            <div class="pitch" id="mgrPitch"></div>
+                            <div class="bench" id="mgrBench"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <h6 class="section-heading">This week&rsquo;s moves</h6>
+                        <div id="mgrMoves"></div>
+                        <h6 class="section-heading mt-3">Chip thinking</h6>
+                        <div id="mgrChipPlan"></div>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="section-heading mt-4">Track record</h6>
+            <div class="ps-list">
+                <table class="table table-sm ps-table ai-history-table mb-0">
+                    <thead><tr>
+                        <th>GW</th><th>Value</th><th>Bank</th>
+                        <th>Chip</th><th>Predicted</th><th>Actual</th>
+                    </tr></thead>
+                    <tbody id="mgrHistoryBody"></tbody>
+                </table>
+            </div>
+        
+            </div>
+
+            <div id="aiViewXi" class="d-none">
+
+            <div class="ai-head">
+                <div class="ai-head-text">
+                    <h4 class="ai-title mb-1">AI Best XI</h4>
+                    <p class="text-muted small mb-0" id="aiBlurb">
+                        The highest-scoring legal squad for the gameweek &mdash; £100m budget,
+                        2/5/5/3 by position, max 3 per club &mdash; solved fresh each week with no
+                        transfers or carry-over.
+                    </p>
+                </div>
+                <div class="ai-gw-nav" id="aiGwNav">
+                    <button id="aiPrev" class="gw-btn">&#9664;</button>
+                    <span id="aiGwLabel" class="gw-label">GW</span>
+                    <button id="aiNext" class="gw-btn">&#9654;</button>
+                </div>
+            </div>
+
+            <div id="aiState" class="alert alert-secondary d-none"></div>
+
+            <div id="aiContent" class="d-none">
+                <div class="stat-chips" id="aiChips"></div>
+                <div class="ai-body row g-3 mt-1">
+                    <div class="col-lg-6">
+                        <div class="pitch-wrap">
+                            <div class="pitch" id="aiPitch"></div>
+                            <div class="bench" id="aiBench"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <h6 class="section-heading">Squad</h6>
+                        <div class="ps-list">
+                            <table class="table table-sm ps-table ai-squad-table mb-0">
+                                <thead><tr>
+                                    <th>Player</th><th>Pos</th><th>Team</th>
+                                    <th>£m</th><th>Pred</th><th>Act</th>
+                                </tr></thead>
+                                <tbody id="aiSquadBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="section-heading mt-4">Track record</h6>
+            <p class="text-muted small mb-2">
+                Predictions are frozen at each deadline and never recalculated, so these
+                comparisons stay honest as the model changes.
+            </p>
+            <div class="ps-list">
+                <table class="table table-sm ps-table ai-history-table mb-0">
+                    <thead><tr>
+                        <th>GW</th><th>Formation</th><th>Cost</th>
+                        <th>Predicted</th><th>Actual</th><th>Diff</th>
+                    </tr></thead>
+                    <tbody id="aiHistoryBody"></tbody>
+                </table>
+            </div>
+        
+            </div>
+        </div>
